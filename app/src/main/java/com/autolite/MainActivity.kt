@@ -1,5 +1,6 @@
 package com.autolite
 
+import android.app.Service
 import android.content.Context
 import android.content.res.Resources
 import android.graphics.Color
@@ -8,6 +9,7 @@ import android.net.Network
 import android.os.Bundle
 import android.provider.Settings
 import android.util.Log
+import android.view.View
 import android.widget.Button
 import android.widget.TextView
 import android.widget.Toast
@@ -43,6 +45,10 @@ class MainActivity : AppCompatActivity() {
 
     private val kTag = "main"
 
+    // 定义SharedPreferences常量
+    private val PREFS_NAME = "MyPrefs"
+    private val DARK_ID_KEY = "darkID"
+
     //UI组件
     private lateinit var btnScan: Button
     private lateinit var btnConnect: Button
@@ -51,6 +57,10 @@ class MainActivity : AppCompatActivity() {
     private lateinit var tvCheckResult: TextView
     private lateinit var tvDarkResult: TextView
     private lateinit var tvOfflineReport: TextView
+    private var btnIsConnected = false
+
+    val lightGreen = Color.parseColor("#90EE90")  // 浅绿色
+    val lightBlue = Color.parseColor("#ADD8E6")  //浅蓝色
 
     //mqtt变量
     private var liteID:String = ""
@@ -75,12 +85,38 @@ class MainActivity : AppCompatActivity() {
     private val barcodeLauncher = registerForActivityResult(ScanContract()) { result ->
         if (result.contents != null) {
             Toast.makeText(this, "扫码成功", Toast.LENGTH_LONG).show()
-            darkID = result.toString()
-            btnScan.setBackgroundColor(Color.GRAY)
-            btnScan.isEnabled = false
             LogUtils.log(Log.DEBUG,"main","拿到扫码结果id:$darkID")
+            darkID = result.contents.toString()
+            // 保存darkID到内部存储
+            val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            with(prefs.edit()) {
+                putString(DARK_ID_KEY, darkID)
+                apply()
+            }
+
+            initWhenDarkIdIsReady()
         } else {
             Toast.makeText(this, "取消扫码", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    //darkID就绪时初始化
+    private fun initWhenDarkIdIsReady() {
+        if(darkID.isNotEmpty()){
+            //scan按钮设置
+            btnScan.setBackgroundColor(Color.GRAY)
+            btnScan.text = "已导入"
+            btnScan.isEnabled = false
+            //Connect按钮设置
+            btnConnect.setBackgroundColor(lightBlue)
+            //mqtt变量获取
+            mqttServerUrl = "ssl://***REMOVED***:8883"
+            mqttClientId = liteID
+            mqttTopicCheckAppAlive = "/topic/$darkID/checkAppAlive"
+            mqttTopicCheckAppAliveResult = "/topic/$darkID/checkAppAliveResult"
+            mqttTopicDark = "/topic/$darkID/dark"
+            mqttTopicDarkResult = "/topic/$darkID/darkResult"
+            mqttTopicLastWill = "/topic/$darkID/LastWill"
         }
     }
 
@@ -95,7 +131,7 @@ class MainActivity : AppCompatActivity() {
         // 绑定视图
         btnScan = findViewById(R.id.btn_scan)
         btnConnect = findViewById(R.id.btn_connect)
-        var isConnected = false
+
         btnCheckOnline = findViewById(R.id.btn_check_online)
         btnDark = findViewById(R.id.btn_dark)
         tvCheckResult = findViewById(R.id.tv_check_result)
@@ -115,16 +151,9 @@ class MainActivity : AppCompatActivity() {
 
         // 设置连接按钮
         btnConnect.setOnClickListener {
-            if (isConnected) {
+            if (btnIsConnected) {
                 // 断开连接逻辑
                 disConnectToMqtt()
-                if (!isMqttConnected()){
-                    btnConnect.setBackgroundColor(Color.GREEN)
-                    btnConnect.text = "连接"
-                    btnCheckOnline.setBackgroundColor(Color.GRAY)  // 假设断开时按钮颜色设置为灰色
-                    btnDark.setBackgroundColor(Color.GRAY)  // 断开时，设置按钮颜色为灰色
-                    isConnected = false
-                }
             } else {
                 // 判断ID是否存在
                 if (darkID.isEmpty()) {
@@ -135,22 +164,13 @@ class MainActivity : AppCompatActivity() {
                         .show()
                     return@setOnClickListener  // 中断后续操作
                 }
-
-                // 执行 MQTT 连接
                 connectToMqtt()
-                if (isMqttConnected()){
-                    btnConnect.setBackgroundColor(Color.GREEN)
-                    btnCheckOnline.setBackgroundColor(Color.BLUE)
-                    btnDark.setBackgroundColor(Color.RED)
-                    btnConnect.text = "已连接"
-                    isConnected = true
-                }
             }
         }
 
         //检查按钮
         btnCheckOnline.setOnClickListener {
-            if(!isConnected){
+            if(!btnIsConnected){
                 AlertDialog.Builder(this)
                     .setTitle("提示")
                     .setMessage("请先连接")
@@ -161,15 +181,15 @@ class MainActivity : AppCompatActivity() {
 
             // 禁用按钮并置灰
             btnCheckOnline.isEnabled = false
-            btnCheckOnline.setBackgroundColor(Color.LTGRAY)
+            btnCheckOnline.setBackgroundColor(lightGreen)
             btnCheckOnline.text = "正在检查在线状态..."
 
             publishMessage(mqttTopicCheckAppAlive, "isAlive?", 1)
         }
 
-        //打卡按钮
+        //设置打卡按钮
         btnDark.setOnClickListener {
-            if(!isConnected){
+            if(!btnIsConnected){
                 AlertDialog.Builder(this)
                     .setTitle("提示")
                     .setMessage("请先连接")
@@ -180,7 +200,7 @@ class MainActivity : AppCompatActivity() {
 
             // 禁用按钮并置灰
             btnDark.isEnabled = false
-            btnDark.setBackgroundColor(Color.LTGRAY)
+            btnDark.setBackgroundColor(lightGreen)
             btnDark.text = "正在打卡..."
 
             publishMessage(mqttTopicDark,"dark", 1)
@@ -188,30 +208,26 @@ class MainActivity : AppCompatActivity() {
 
         // 获取设备的 Android ID，对于控制设备来说仅用来登录
         liteID = getUUID()
-        //mqtt变量获取
-        mqttServerUrl = "ssl://***REMOVED***:8883"
-        mqttClientId = liteID
-        mqttTopicCheckAppAlive = "/topic/$darkID/checkAppAlive"
-        mqttTopicCheckAppAliveResult = "/topic/$darkID/checkAppAliveResult"
-        mqttTopicDark = "/topic/$darkID/dark"
-        mqttTopicDarkResult = "/topic/$darkID/darkResult"
-        mqttTopicLastWill = "/topic/$darkID/LastWill"
         user = liteID
         pwd = liteID
         LogUtils.log(Log.DEBUG,"main", "设备唯一ID：$liteID")
         LogUtils.log(Log.DEBUG,"main", "加载 MQTT 配置文件")
+
+        val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val savedDarkID = prefs.getString(DARK_ID_KEY, null)
+
+        if (savedDarkID != null) {
+            // 如果已经保存了darkID，则直接使用
+            darkID = savedDarkID
+            LogUtils.log(Log.DEBUG, "main", "从存储中获取到darkID:$darkID")
+            initWhenDarkIdIsReady()
+        }
 
         // 初始化网络相关配置
         connectivityManager = getSystemService(CONNECTIVITY_SERVICE) as ConnectivityManager
         networkCallback = object : ConnectivityManager.NetworkCallback() {
             override fun onAvailable(network: Network) {
                 LogUtils.log(Log.DEBUG,"main", "网络连接可用")
-
-//                // 检查 MQTT 客户端是否已连接
-//                if (!isMqttConnected() && !isConnecting){
-//                    LogUtils.log(Log.DEBUG,"main", "MQTT连接中")
-//                    connectToMqtt()
-//                }
             }
 
             override fun onLost(network: Network) {
@@ -315,14 +331,19 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun disConnectToMqtt() {
+    private fun disConnectToMqtt(){
         LogUtils.log(Log.DEBUG,kTag, "尝试断开 MQTT 代理")
         try {
             if (mqttClient.isConnected) {
-
                 mqttClient.disconnect()
-                mqttClient.close()
                 LogUtils.log(Log.DEBUG,kTag, "连接已成功断开")
+
+                //修改UI
+                btnConnect.setBackgroundColor(lightBlue)
+                btnConnect.text = "连接"
+                btnCheckOnline.setBackgroundColor(Color.GRAY)  // 假设断开时按钮颜色设置为灰色
+                btnDark.setBackgroundColor(Color.GRAY)  // 断开时，设置按钮颜色为灰色
+                btnIsConnected = false
             } else {
                 // 如果当前没有连接，提示用户
                 LogUtils.log(Log.DEBUG,kTag, "当前没有连接")
@@ -339,6 +360,7 @@ class MainActivity : AppCompatActivity() {
         } catch (e: Exception) {
             // 捕获其他异常
             LogUtils.log(Log.DEBUG,kTag, "发生未知错误: ${e.message}")
+            e.printStackTrace()  // 输出堆栈跟踪信息
             runOnUiThread {
                 Toast.makeText(this@MainActivity, "发生未知错误: ${e.message}", Toast.LENGTH_SHORT).show()
             }
@@ -351,7 +373,7 @@ class MainActivity : AppCompatActivity() {
         lateinit var encryptedP12File: File
         lateinit var encryptedCaFile: File
 
-        if (isMqttConnected() || isConnecting) {
+        if (isConnecting) {
             LogUtils.log(Log.WARN,kTag, "已经连接或正在连接中，取消连接请求")
             return
         }
@@ -361,8 +383,8 @@ class MainActivity : AppCompatActivity() {
         // 确保网络连接
         if (!NetworkUtils.isNetworkAvailable(this)) {
             LogUtils.log(Log.WARN,kTag, "网络不可用，无法连接到 MQTT 代理")
-            isConnecting = false
             Toast.makeText(this@MainActivity, "网络异常", Toast.LENGTH_LONG).show()
+            isConnecting = false
             return
         }
 
@@ -374,6 +396,7 @@ class MainActivity : AppCompatActivity() {
         } catch (e: Resources.NotFoundException) {
             // 如果文件不存在，打印异常信息
             LogUtils.log(Log.WARN, kTag, "加密文件不存在: ${e.message}")
+            isConnecting = false
             return // 直接返回
         }
 
@@ -381,6 +404,7 @@ class MainActivity : AppCompatActivity() {
         if (key.isEmpty()) {
             LogUtils.log(Log.ERROR, kTag, "密钥生成失败")
             // 处理解密失败的情况，比如返回或终止操作
+            isConnecting = false
             return
         }
 
@@ -391,6 +415,7 @@ class MainActivity : AppCompatActivity() {
             LogUtils.log(Log.ERROR, kTag, "解密证书文件失败")
             // 处理解密失败的情况，比如返回或终止操作
             Toast.makeText(this@MainActivity, "解密证书文件失败", Toast.LENGTH_LONG).show()
+            isConnecting = false
             return
         }
         val caBytes = FileInputStream(encryptedCaFile).use { inputStream ->
@@ -400,6 +425,7 @@ class MainActivity : AppCompatActivity() {
             LogUtils.log(Log.ERROR, kTag, "解密 CA 文件失败")
             // 处理解密失败的情况，比如返回或终止操作
             Toast.makeText(this@MainActivity, "解密 CA 文件失败", Toast.LENGTH_LONG).show()
+            isConnecting = false
             return
         }
 
@@ -470,6 +496,16 @@ class MainActivity : AppCompatActivity() {
                     LogUtils.log(Log.DEBUG,kTag, "$mqttServerUrl 连接成功")
                     isConnecting = false
 
+                    // 连接成功后设置按钮状态
+                    runOnUiThread {
+                        btnConnect.setBackgroundColor(lightGreen)
+                        btnConnect.text = "已连接"
+                        btnConnect.isEnabled = true  // 可以再次点击断开连接
+                        btnCheckOnline.setBackgroundColor(lightBlue)
+                        btnDark.setBackgroundColor(lightBlue)
+                        btnIsConnected = true
+                    }
+
                     val topicsToSubscribe = arrayOf(mqttTopicDarkResult,mqttTopicCheckAppAliveResult)
                     val qosLevels = intArrayOf(1,1) // QoS 级别
                     subscribeToTopics(topicsToSubscribe, qosLevels) // 连接成功后订阅主题
@@ -506,22 +542,21 @@ class MainActivity : AppCompatActivity() {
                         cause.printStackTrace(PrintWriter(writer))
                     }.toString()
                     LogUtils.log(Log.ERROR, kTag, "堆栈信息：\n$stackTrace")
-                } else {
-                    LogUtils.log(Log.ERROR, kTag, "MQTT 连接断开，原因未知")
                 }
-                isConnecting = true
-                Toast.makeText(this@MainActivity, "mqtt连接丢失", Toast.LENGTH_LONG).show()
+                isConnecting = false
             }
 
             override fun connectComplete(reconnect: Boolean, serverURI: String?) {
                 if (reconnect) {
                     LogUtils.log(Log.INFO, kTag, "重连成功")
+                    isConnecting = false
+                    Toast.makeText(this@MainActivity, "mqtt重连成功", Toast.LENGTH_LONG).show()
                 } else {
                     LogUtils.log(Log.INFO, kTag, "初次连接成功")
+                    isConnecting = false
+                    return
                 }
-                isConnecting = false
-
-                val topicsToSubscribe = arrayOf(mqttTopicDarkResult,mqttTopicCheckAppAliveResult)
+                val topicsToSubscribe = arrayOf(mqttTopicCheckAppAliveResult,mqttTopicDarkResult)
                 val qosLevels = intArrayOf(1,1) // QoS 级别
                 subscribeToTopics(topicsToSubscribe, qosLevels) // 连接成功后订阅主题
             }
@@ -532,28 +567,31 @@ class MainActivity : AppCompatActivity() {
                     LogUtils.log(Log.DEBUG,kTag, "收到主题 $topic 的消息: $msg")
 
                     when (topic) {
-                        mqttTopicDarkResult -> {
-                            LogUtils.log(Log.DEBUG,kTag, "接收主题 $mqttTopicDarkResult 的消息，获取dark设备打卡结果")
-                            runOnUiThread {
-                                tvDarkResult.text = message.toString()  // 显示设备返回的状态，比如“设备在线”或“离线”
-                                btnDark.isEnabled = true
-                                btnDark.setBackgroundColor(Color.RED)
-                                btnDark.text = "连接"
-                            }
-                        }
                         mqttTopicCheckAppAliveResult -> {
-                            LogUtils.log(Log.DEBUG,kTag, "接收主题 $mqttTopicCheckAppAliveResult 的消息，获取dark设备是否在线")
                             runOnUiThread {
-                                tvCheckResult.text = message.toString()  // 显示设备返回的状态，比如“设备在线”或“离线”
+                                LogUtils.log(Log.DEBUG, kTag, "tvCheckResult visibility: ${tvCheckResult.visibility}")
+                                LogUtils.log(Log.DEBUG, kTag, "设置tvCheckResult的文本为: $msg")
+                                tvCheckResult.visibility = View.VISIBLE
+                                tvCheckResult.text = msg
                                 btnCheckOnline.isEnabled = true
-                                btnCheckOnline.setBackgroundColor(Color.BLUE)
+                                btnCheckOnline.setBackgroundColor(lightBlue)
                                 btnCheckOnline.text = "检查是否在线"
                             }
                         }
-                        mqttTopicLastWill -> {
-                            LogUtils.log(Log.DEBUG,kTag, "接收主题 $mqttTopicLastWill 的消息，获取dark设备是否在线")
+                        mqttTopicDarkResult -> {
                             runOnUiThread {
-                                tvOfflineReport.text = message.toString()
+                                LogUtils.log(Log.DEBUG, kTag, "正在更新 UI，主题: $topic")
+                                tvDarkResult.visibility = View.VISIBLE
+                                tvDarkResult.text = msg
+                                btnDark.isEnabled = true
+                                btnDark.setBackgroundColor(lightBlue)
+                                btnDark.text = "连接"
+                            }
+                        }
+                        mqttTopicLastWill -> {
+                            runOnUiThread {
+                                tvOfflineReport.visibility = View.VISIBLE
+                                tvOfflineReport.text = msg
                             }
                         }
                     }
@@ -706,6 +744,20 @@ class MainActivity : AppCompatActivity() {
     private fun Long.timestampToCompleteDate(): String {
         val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.CHINA)
         return dateFormat.format(Date(this))
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        try {
+            // 取消订阅
+            unsubscribeFromTopics(arrayOf(mqttTopicCheckAppAlive, mqttTopicDark))
+            //断开连接
+            mqttClient.disconnect()
+            // 注销网络回调
+            connectivityManager.unregisterNetworkCallback(networkCallback)
+        } catch (e: MqttException) {
+            e.printStackTrace()
+        }
     }
 
 }

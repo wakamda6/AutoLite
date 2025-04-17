@@ -37,18 +37,18 @@
 
             <Button
                 android:id="@+id/btn_scan"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
+                android:layout_width="120dp"
+                android:layout_height="60dp"
                 android:layout_alignParentTop="true"
                 android:layout_alignParentEnd="true"
                 android:layout_margin="16dp"
-                android:text="扫码"
-                android:backgroundTint="#FF09BB07"/>
+                android:backgroundTint="#FF09BB07"
+                android:text="扫码" />
 
             <Button
                 android:id="@+id/btn_connect"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
+                android:layout_width="120dp"
+                android:layout_height="60dp"
                 android:layout_alignParentTop="true"
                 android:layout_alignParentEnd="true"
                 android:layout_margin="16dp"
@@ -73,7 +73,7 @@
             <Button
                 android:id="@+id/btn_check_online"
                 android:layout_width="match_parent"
-                android:layout_height="wrap_content"
+                android:layout_height="70dp"
                 android:layout_marginTop="8dp"
                 android:backgroundTint="#808080"
                 android:text="检查是否在线"
@@ -84,17 +84,17 @@
                 android:id="@+id/tv_check_result"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
+                android:visibility="visible"
                 android:layout_marginTop="12dp"
                 android:background="@drawable/bg_result"
                 android:padding="22dp"
-                android:text="检查在线结果"
                 android:textSize="16sp" />
 
             <!-- 打卡按钮 -->
             <Button
                 android:id="@+id/btn_dark"
                 android:layout_width="match_parent"
-                android:layout_height="wrap_content"
+                android:layout_height="70dp"
                 android:layout_marginTop="20dp"
                 android:backgroundTint="#808080"
                 android:text="打卡"
@@ -105,10 +105,10 @@
                 android:id="@+id/tv_punch_result"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
+                android:visibility="visible"
                 android:layout_marginTop="12dp"
                 android:background="@drawable/bg_result"
                 android:padding="22dp"
-                android:text="打卡结果:"
                 android:textSize="16sp" />
         </LinearLayout>
 
@@ -128,6 +128,7 @@
                 android:id="@+id/tv_offline_report"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
+                android:visibility="visible"
                 android:layout_marginTop="12dp"
                 android:background="@drawable/bg_result"
                 android:padding="12dp"
