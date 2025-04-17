@@ -79,7 +79,6 @@ class MainActivity : AppCompatActivity() {
     //网络变量
     private lateinit var connectivityManager: ConnectivityManager
     private lateinit var networkCallback: ConnectivityManager.NetworkCallback
-    var isConnecting = false
 
     //扫码结果回调
     private val barcodeLauncher = registerForActivityResult(ScanContract()) { result ->
@@ -373,18 +372,10 @@ class MainActivity : AppCompatActivity() {
         lateinit var encryptedP12File: File
         lateinit var encryptedCaFile: File
 
-        if (isConnecting) {
-            LogUtils.log(Log.WARN,kTag, "已经连接或正在连接中，取消连接请求")
-            return
-        }
-
-        isConnecting = true
-
         // 确保网络连接
         if (!NetworkUtils.isNetworkAvailable(this)) {
             LogUtils.log(Log.WARN,kTag, "网络不可用，无法连接到 MQTT 代理")
             Toast.makeText(this@MainActivity, "网络异常", Toast.LENGTH_LONG).show()
-            isConnecting = false
             return
         }
 
@@ -396,7 +387,6 @@ class MainActivity : AppCompatActivity() {
         } catch (e: Resources.NotFoundException) {
             // 如果文件不存在，打印异常信息
             LogUtils.log(Log.WARN, kTag, "加密文件不存在: ${e.message}")
-            isConnecting = false
             return // 直接返回
         }
 
@@ -404,7 +394,6 @@ class MainActivity : AppCompatActivity() {
         if (key.isEmpty()) {
             LogUtils.log(Log.ERROR, kTag, "密钥生成失败")
             // 处理解密失败的情况，比如返回或终止操作
-            isConnecting = false
             return
         }
 
@@ -415,7 +404,6 @@ class MainActivity : AppCompatActivity() {
             LogUtils.log(Log.ERROR, kTag, "解密证书文件失败")
             // 处理解密失败的情况，比如返回或终止操作
             Toast.makeText(this@MainActivity, "解密证书文件失败", Toast.LENGTH_LONG).show()
-            isConnecting = false
             return
         }
         val caBytes = FileInputStream(encryptedCaFile).use { inputStream ->
@@ -425,7 +413,6 @@ class MainActivity : AppCompatActivity() {
             LogUtils.log(Log.ERROR, kTag, "解密 CA 文件失败")
             // 处理解密失败的情况，比如返回或终止操作
             Toast.makeText(this@MainActivity, "解密 CA 文件失败", Toast.LENGTH_LONG).show()
-            isConnecting = false
             return
         }
 
@@ -494,7 +481,6 @@ class MainActivity : AppCompatActivity() {
             mqttClient.connect(options, null, object : IMqttActionListener {
                 override fun onSuccess(asyncActionToken: IMqttToken?) {
                     LogUtils.log(Log.DEBUG,kTag, "$mqttServerUrl 连接成功")
-                    isConnecting = false
 
                     // 连接成功后设置按钮状态
                     runOnUiThread {
@@ -526,12 +512,11 @@ class MainActivity : AppCompatActivity() {
                         LogUtils.log(Log.ERROR, kTag, "未知错误: ${exception?.message}")
                     }
                     Toast.makeText(this@MainActivity, "mqtt通信失败", Toast.LENGTH_LONG).show()
-                    isConnecting = false
+                    btnIsConnected = false
                 }
             })
         } catch (e: MqttException) {
             LogUtils.log(Log.ERROR,kTag, "MQTT 连接异常: ${e.message}")
-            isConnecting = false
         }
 
         mqttClient.setCallback(object : MqttCallbackExtended {
@@ -543,17 +528,15 @@ class MainActivity : AppCompatActivity() {
                     }.toString()
                     LogUtils.log(Log.ERROR, kTag, "堆栈信息：\n$stackTrace")
                 }
-                isConnecting = false
+                btnIsConnected = false
             }
 
             override fun connectComplete(reconnect: Boolean, serverURI: String?) {
                 if (reconnect) {
                     LogUtils.log(Log.INFO, kTag, "重连成功")
-                    isConnecting = false
                     Toast.makeText(this@MainActivity, "mqtt重连成功", Toast.LENGTH_LONG).show()
                 } else {
                     LogUtils.log(Log.INFO, kTag, "初次连接成功")
-                    isConnecting = false
                     return
                 }
                 val topicsToSubscribe = arrayOf(mqttTopicCheckAppAliveResult,mqttTopicDarkResult)
@@ -602,16 +585,6 @@ class MainActivity : AppCompatActivity() {
                 LogUtils.log(Log.DEBUG,kTag, "消息发送成功：${token?.message?.toString()}")
             }
         })
-    }
-
-    private fun isMqttConnected(): Boolean {
-        return if (::mqttClient.isInitialized) {
-            val isConnected = mqttClient.isConnected
-            LogUtils.log(Log.DEBUG, "main", "MQTT状态已连接")
-            isConnected
-        } else {
-            false
-        }
     }
 
     //mqtt订阅
