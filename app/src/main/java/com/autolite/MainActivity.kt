@@ -532,6 +532,7 @@ class MainActivity : AppCompatActivity() {
             }
 
             override fun connectComplete(reconnect: Boolean, serverURI: String?) {
+                btnIsConnected = true
                 if (reconnect) {
                     LogUtils.log(Log.INFO, kTag, "重连成功")
                     Toast.makeText(this@MainActivity, "mqtt重连成功", Toast.LENGTH_LONG).show()
