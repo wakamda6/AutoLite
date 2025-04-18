@@ -9,8 +9,9 @@
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:background="#EEEEEE"
-        android:orientation="vertical">
+        android:background="@mipmap/back"
+        android:orientation="vertical"
+        android:fitsSystemWindows="true">
 
         <TextView
             android:layout_width="match_parent"

@@ -1,12 +1,14 @@
 package com.autolite
 
-import android.app.Service
+import android.annotation.SuppressLint
 import android.content.Context
 import android.content.res.Resources
 import android.graphics.Color
 import android.net.ConnectivityManager
 import android.net.Network
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.provider.Settings
 import android.util.Log
 import android.view.View
@@ -23,7 +25,6 @@ import org.eclipse.paho.client.mqttv3.*
 import java.io.*
 import java.security.KeyStore
 import java.security.cert.CertificateFactory
-import java.text.SimpleDateFormat
 import java.util.*
 import javax.crypto.Cipher
 import javax.crypto.CipherInputStream
@@ -39,13 +40,21 @@ import org.eclipse.paho.client.mqttv3.MqttConnectOptions
 import java.net.HttpURLConnection
 import java.net.URL
 import java.security.MessageDigest
+import java.security.cert.X509CRL
+import java.security.cert.X509Certificate
 
 
 class MainActivity : AppCompatActivity() {
 
     private val kTag = "main"
 
-    // 定义SharedPreferences常量
+    //倒计时
+    private var onlineCheckTimeoutHandler: Handler? = null
+    private var onlineCheckTimeoutRunnable: Runnable? = null
+    private var darkCheckTimeoutHandler: Handler? = null
+    private var darkCheckTimeoutRunnable: Runnable? = null
+
+    // 定义SharedPreferences常量用于保存ID
     private val PREFS_NAME = "MyPrefs"
     private val DARK_ID_KEY = "darkID"
 
@@ -75,6 +84,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var mqttTopicDark: String
     private lateinit var mqttTopicDarkResult: String
     private lateinit var mqttTopicLastWill: String
+    val mqttSslContext: SSLContext = SSLContext.getInstance("TLSv1.3")
 
     //网络变量
     private lateinit var connectivityManager: ConnectivityManager
@@ -122,6 +132,12 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
+
+        //背景图延伸到全屏
+        window.decorView.systemUiVisibility =
+            View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+        window.statusBarColor = Color.TRANSPARENT
+
 
         // 初始化 LogUtils
         LogUtils.initialize(this)
@@ -180,10 +196,21 @@ class MainActivity : AppCompatActivity() {
 
             // 禁用按钮并置灰
             btnCheckOnline.isEnabled = false
-            btnCheckOnline.setBackgroundColor(lightGreen)
+            btnCheckOnline.setBackgroundColor(Color.GRAY)
             btnCheckOnline.text = "正在检查在线状态..."
 
-            publishMessage(mqttTopicCheckAppAlive, "isAlive?", 1)
+            publishMessage(mqttTopicCheckAppAlive, "isAlive?", 2)
+
+            // 设置 10 秒倒计时
+            onlineCheckTimeoutHandler = Handler(Looper.getMainLooper())
+            onlineCheckTimeoutRunnable = Runnable {
+                tvCheckResult.text = "不在线或网络缓慢，请稍后重试"
+                btnCheckOnline.text = "检查是否在线"
+                btnCheckOnline.isEnabled = true
+                btnCheckOnline.setBackgroundColor(lightBlue)
+            }
+
+            onlineCheckTimeoutHandler?.postDelayed(onlineCheckTimeoutRunnable!!, 8000)
         }
 
         //设置打卡按钮
@@ -199,10 +226,21 @@ class MainActivity : AppCompatActivity() {
 
             // 禁用按钮并置灰
             btnDark.isEnabled = false
-            btnDark.setBackgroundColor(lightGreen)
+            btnDark.setBackgroundColor(Color.GRAY)
             btnDark.text = "正在打卡..."
 
-            publishMessage(mqttTopicDark,"dark", 1)
+            publishMessage(mqttTopicDark,"dark", 2)//保证送达
+
+            // 设置 60 秒倒计时
+            darkCheckTimeoutHandler = Handler(Looper.getMainLooper())
+            darkCheckTimeoutRunnable = Runnable {
+                tvDarkResult.text = "打卡失败或网络缓慢，请稍后重试"
+                btnDark.text = "打卡"
+                btnDark.isEnabled = true
+                btnDark.setBackgroundColor(lightBlue)
+            }
+
+            darkCheckTimeoutHandler?.postDelayed(darkCheckTimeoutRunnable!!, 60000)
         }
 
         // 获取设备的 Android ID，对于控制设备来说仅用来登录
@@ -212,6 +250,7 @@ class MainActivity : AppCompatActivity() {
         LogUtils.log(Log.DEBUG,"main", "设备唯一ID：$liteID")
         LogUtils.log(Log.DEBUG,"main", "加载 MQTT 配置文件")
 
+        //将darkID保存
         val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         val savedDarkID = prefs.getString(DARK_ID_KEY, null)
 
@@ -239,7 +278,7 @@ class MainActivity : AppCompatActivity() {
 
         //判断证书是否存在，因为涉及文件下载，安卓强制非阻塞
         lifecycleScope.launch(Dispatchers.IO) {
-            val success = initCertsBlocking(this@MainActivity, liteID)
+            val success = getAndCheckCA(this@MainActivity, liteID)
             if (!success) {
                 // 回到主线程再弹窗
                 launch(Dispatchers.Main) {
@@ -259,7 +298,7 @@ class MainActivity : AppCompatActivity() {
             .setMessage("请将页面截图发送给开发者后重试\nID: $id")
             .setPositiveButton("重试") { _, _ ->
                 lifecycleScope.launch(Dispatchers.IO) {
-                    val success = initCertsBlocking(context, id)
+                    val success = getAndCheckCA(context, id)
                     if (!success) {
                         // 回到主线程再弹窗
                         launch(Dispatchers.Main) {
@@ -276,7 +315,8 @@ class MainActivity : AppCompatActivity() {
             .show()
     }
 
-    private fun initCertsBlocking(context: Context, id: String): Boolean {
+    //证书初始化流程
+    private fun getAndCheckCA(context: Context, id: String): Boolean {
         val clientEnPath = File(context.filesDir, "$id.en")
         val caEnPath = File(context.filesDir, "ca.en")
 
@@ -298,6 +338,90 @@ class MainActivity : AppCompatActivity() {
 
         if (!clientEnPath.exists() || !caEnPath.exists()) {
             LogUtils.log(Log.ERROR, kTag, "证书文件下载失败")
+            return false
+        }
+
+        //验证吊销
+        val key = generateKeyFromString(liteID)
+        if (key.isEmpty()) {
+            LogUtils.log(Log.ERROR, kTag, "密钥生成失败")
+            // 处理解密失败的情况，比如返回或终止操作
+            return false
+        }
+
+        val p12Bytes = FileInputStream(clientEnPath).use { inputStream ->
+            aesDecryptInMemory(inputStream, key)
+        }
+        if (p12Bytes.isEmpty()) {
+            LogUtils.log(Log.ERROR, kTag, "解密证书文件失败")
+            // 处理解密失败的情况，比如返回或终止操作
+            Toast.makeText(this@MainActivity, "解密证书文件失败", Toast.LENGTH_LONG).show()
+            return false
+        }
+        val caBytes = FileInputStream(caEnPath).use { inputStream ->
+            aesDecryptInMemory(inputStream, key)
+        }
+        if (caBytes.isEmpty()) {
+            LogUtils.log(Log.ERROR, kTag, "解密 CA 文件失败")
+            // 处理解密失败的情况，比如返回或终止操作
+            Toast.makeText(this@MainActivity, "解密 CA 文件失败", Toast.LENGTH_LONG).show()
+            return false
+        }
+
+        // 加载 .p12 文件
+        val p12P = liteID.toCharArray()
+        val keyStore = KeyStore.getInstance("PKCS12")
+        val p12InputStream = p12Bytes.inputStream()
+        try {
+            keyStore.load(p12InputStream, p12P)
+            LogUtils.log(Log.INFO,kTag, "P12 证书加载成功")
+
+            // 吊销验证
+            val alias = keyStore.aliases().nextElement() // 获取 p12 中的第一个别名
+            val clientCert = keyStore.getCertificate(alias) as X509Certificate
+
+            val crlUrl = URL("https://***REMOVED***/crl/crl.pem")
+            val crlStream = crlUrl.openStream()
+            val cf = CertificateFactory.getInstance("X.509")
+            val crl = cf.generateCRL(crlStream) as X509CRL
+
+            if (crl.isRevoked(clientCert)) {
+                LogUtils.log(Log.ERROR, kTag, "客户端证书已被吊销")
+                Toast.makeText(this@MainActivity, "证书已被吊销，禁止连接", Toast.LENGTH_LONG).show()
+                return false
+            } else {
+                LogUtils.log(Log.INFO, kTag, "客户端证书有效，未被吊销")
+            }
+        } catch (e: Exception) {
+            LogUtils.log(Log.WARN,kTag, "P12 证书加载失败: ${e.message}")
+            return false
+        }
+
+        // 创建 KeyManagerFactory 来管理客户端证书和私钥
+        val keyManagerFactory = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm())
+        keyManagerFactory.init(keyStore, p12P)
+
+        // 加载 CA 根证书
+        val caInputStream = caBytes.inputStream()
+        val certificateFactory = CertificateFactory.getInstance("X.509")
+        val caCertificate = certificateFactory.generateCertificate(caInputStream)
+
+        // 创建一个包含 CA 证书的 KeyStore
+        val caKeyStore = KeyStore.getInstance(KeyStore.getDefaultType())
+        caKeyStore.load(null, null)
+        caKeyStore.setCertificateEntry("ca", caCertificate)
+
+        // 初始化 TrustManagerFactory
+        val trustManagerFactory = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm())
+        trustManagerFactory.init(caKeyStore)
+        //trustManagerFactory.init(null as KeyStore?)  // 默认使用系统信任的证书.不使用系统默认证书，保证内网通信
+
+        // SSLContext 设置
+        try {
+            mqttSslContext.init(keyManagerFactory.keyManagers, trustManagerFactory.trustManagers, null)
+            LogUtils.log(Log.DEBUG,kTag, "mqttSslContext 初始化成功")
+        } catch (e: Exception) {
+            LogUtils.log(Log.WARN,kTag, "mqttSslContext 初始化失败: ${e.message}")
             return false
         }
 
@@ -369,92 +493,12 @@ class MainActivity : AppCompatActivity() {
     private fun connectToMqtt() {
         LogUtils.log(Log.DEBUG,kTag, "尝试连接到 MQTT 代理")
 
-        lateinit var encryptedP12File: File
-        lateinit var encryptedCaFile: File
-
         // 确保网络连接
         if (!NetworkUtils.isNetworkAvailable(this)) {
             LogUtils.log(Log.WARN,kTag, "网络不可用，无法连接到 MQTT 代理")
             Toast.makeText(this@MainActivity, "网络异常", Toast.LENGTH_LONG).show()
             return
         }
-
-        try {
-            // 尝试加载加密文件
-            encryptedP12File = File(applicationContext.filesDir, "$liteID.en")
-
-            encryptedCaFile = File(applicationContext.filesDir, "ca.en")
-        } catch (e: Resources.NotFoundException) {
-            // 如果文件不存在，打印异常信息
-            LogUtils.log(Log.WARN, kTag, "加密文件不存在: ${e.message}")
-            return // 直接返回
-        }
-
-        val key = generateKeyFromString(liteID)
-        if (key.isEmpty()) {
-            LogUtils.log(Log.ERROR, kTag, "密钥生成失败")
-            // 处理解密失败的情况，比如返回或终止操作
-            return
-        }
-
-        val p12Bytes = FileInputStream(encryptedP12File).use { inputStream ->
-            aesDecryptInMemory(inputStream, key)
-        }
-        if (p12Bytes.isEmpty()) {
-            LogUtils.log(Log.ERROR, kTag, "解密证书文件失败")
-            // 处理解密失败的情况，比如返回或终止操作
-            Toast.makeText(this@MainActivity, "解密证书文件失败", Toast.LENGTH_LONG).show()
-            return
-        }
-        val caBytes = FileInputStream(encryptedCaFile).use { inputStream ->
-            aesDecryptInMemory(inputStream, key)
-        }
-        if (caBytes.isEmpty()) {
-            LogUtils.log(Log.ERROR, kTag, "解密 CA 文件失败")
-            // 处理解密失败的情况，比如返回或终止操作
-            Toast.makeText(this@MainActivity, "解密 CA 文件失败", Toast.LENGTH_LONG).show()
-            return
-        }
-
-        // 加载 .p12 文件
-        val p12P = liteID.toCharArray()
-        val keyStore = KeyStore.getInstance("PKCS12")
-        val p12InputStream = p12Bytes.inputStream()
-        try {
-            keyStore.load(p12InputStream, p12P)
-            LogUtils.log(Log.INFO,kTag, "P12 证书加载成功")
-        } catch (e: Exception) {
-            LogUtils.log(Log.WARN,kTag, "P12 证书加载失败: ${e.message}")
-        }
-
-        // 创建 KeyManagerFactory 来管理客户端证书和私钥
-        val keyManagerFactory = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm())
-        keyManagerFactory.init(keyStore, p12P)
-
-        // 加载 CA 根证书
-        val caInputStream = caBytes.inputStream()
-        val certificateFactory = CertificateFactory.getInstance("X.509")
-        val caCertificate = certificateFactory.generateCertificate(caInputStream)
-
-        // 创建一个包含 CA 证书的 KeyStore
-        val caKeyStore = KeyStore.getInstance(KeyStore.getDefaultType())
-        caKeyStore.load(null, null)
-        caKeyStore.setCertificateEntry("ca", caCertificate)
-
-        // 初始化 TrustManagerFactory
-        val trustManagerFactory = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm())
-        trustManagerFactory.init(caKeyStore)
-        //trustManagerFactory.init(null as KeyStore?)  // 默认使用系统信任的证书.不使用系统默认证书，保证内网通信
-
-        // 使用证书和密钥进行进一步的 SSLContext 设置，确保连接安全
-        val sslContext = SSLContext.getInstance("TLSv1.3")
-        try {
-            sslContext.init(keyManagerFactory.keyManagers, trustManagerFactory.trustManagers, null)
-            LogUtils.log(Log.DEBUG,kTag, "SSLContext 初始化成功")
-        } catch (e: Exception) {
-            LogUtils.log(Log.WARN,kTag, "SSLContext 初始化失败: ${e.message}")
-        }
-
 
         mqttClient = MqttAndroidClient(applicationContext, mqttServerUrl, mqttClientId, Ack.AUTO_ACK)
         val options = MqttConnectOptions().apply {
@@ -463,17 +507,17 @@ class MainActivity : AppCompatActivity() {
             keepAliveInterval = 30
             userName = user
             password = pwd.toCharArray()
+//
+//            // 设置遗嘱消息
+//            val willQoS = 2
+//
+//            // 获取当前时间戳
+//            val willMessage = "darkPhone_offline_at_" + System.currentTimeMillis().timestampToCompleteDate()
+//
+//            setWill(mqttTopicLastWill, willMessage.toByteArray(), willQoS, true)
 
-            // 设置遗嘱消息
-            val willQoS = 2
-
-            // 获取当前时间戳
-            val willMessage = "darkPhone_offline_at_" + System.currentTimeMillis().timestampToCompleteDate()
-
-            setWill(mqttTopicLastWill, willMessage.toByteArray(), willQoS, true)
-
-            // 使用自定义的 SSLContext
-            socketFactory = sslContext.socketFactory
+            // 使用自定义的 mqttSslContext
+            socketFactory = mqttSslContext.socketFactory
         }
         options.isAutomaticReconnect = true
 
@@ -492,8 +536,8 @@ class MainActivity : AppCompatActivity() {
                         btnIsConnected = true
                     }
 
-                    val topicsToSubscribe = arrayOf(mqttTopicDarkResult,mqttTopicCheckAppAliveResult)
-                    val qosLevels = intArrayOf(1,1) // QoS 级别
+                    val topicsToSubscribe = arrayOf(mqttTopicDarkResult,mqttTopicCheckAppAliveResult,mqttTopicLastWill)
+                    val qosLevels = intArrayOf(2,2,2) // QoS 级别
                     subscribeToTopics(topicsToSubscribe, qosLevels) // 连接成功后订阅主题
                     Toast.makeText(this@MainActivity, "Mqtt主题订阅成功", Toast.LENGTH_LONG).show()
                 }
@@ -540,8 +584,8 @@ class MainActivity : AppCompatActivity() {
                     LogUtils.log(Log.INFO, kTag, "初次连接成功")
                     return
                 }
-                val topicsToSubscribe = arrayOf(mqttTopicCheckAppAliveResult,mqttTopicDarkResult)
-                val qosLevels = intArrayOf(1,1) // QoS 级别
+                val topicsToSubscribe = arrayOf(mqttTopicCheckAppAliveResult,mqttTopicDarkResult,mqttTopicLastWill)
+                val qosLevels = intArrayOf(2,2,2) // QoS 级别
                 subscribeToTopics(topicsToSubscribe, qosLevels) // 连接成功后订阅主题
             }
 
@@ -552,10 +596,8 @@ class MainActivity : AppCompatActivity() {
 
                     when (topic) {
                         mqttTopicCheckAppAliveResult -> {
+                            onlineCheckTimeoutHandler?.removeCallbacks(onlineCheckTimeoutRunnable!!)
                             runOnUiThread {
-                                LogUtils.log(Log.DEBUG, kTag, "tvCheckResult visibility: ${tvCheckResult.visibility}")
-                                LogUtils.log(Log.DEBUG, kTag, "设置tvCheckResult的文本为: $msg")
-                                tvCheckResult.visibility = View.VISIBLE
                                 tvCheckResult.text = msg
                                 btnCheckOnline.isEnabled = true
                                 btnCheckOnline.setBackgroundColor(lightBlue)
@@ -563,13 +605,13 @@ class MainActivity : AppCompatActivity() {
                             }
                         }
                         mqttTopicDarkResult -> {
+                            darkCheckTimeoutHandler?.removeCallbacks(darkCheckTimeoutRunnable!!)
                             runOnUiThread {
-                                LogUtils.log(Log.DEBUG, kTag, "正在更新 UI，主题: $topic")
                                 tvDarkResult.visibility = View.VISIBLE
                                 tvDarkResult.text = msg
                                 btnDark.isEnabled = true
                                 btnDark.setBackgroundColor(lightBlue)
-                                btnDark.text = "连接"
+                                btnDark.text = "打卡"
                             }
                         }
                         mqttTopicLastWill -> {
@@ -634,7 +676,7 @@ class MainActivity : AppCompatActivity() {
 
 
     //mqtt 发布
-    private fun publishMessage(topic: String, message: String, qos: Int = 1) {
+    private fun publishMessage(topic: String, message: String, qos: Int) {
         LogUtils.log(Log.DEBUG,kTag, "尝试发布消息到主题 $topic: $message")
 
         try {
@@ -711,14 +753,15 @@ class MainActivity : AppCompatActivity() {
     }
 
     //获取设备唯一ID
+    @SuppressLint("HardwareIds")
     private fun getUUID(): String {
         return Settings.Secure.getString(this.contentResolver, Settings.Secure.ANDROID_ID)
     }
 
-    private fun Long.timestampToCompleteDate(): String {
-        val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.CHINA)
-        return dateFormat.format(Date(this))
-    }
+//    private fun Long.timestampToCompleteDate(): String {
+//        val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.CHINA)
+//        return dateFormat.format(Date(this))
+//    }
 
     override fun onDestroy() {
         super.onDestroy()
