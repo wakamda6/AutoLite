@@ -48,6 +48,10 @@ class MainActivity : AppCompatActivity() {
 
     private val kTag = "main"
 
+    //按两次退出应用
+    private var lastBackPressTime = 0L
+    private val backPressInterval = 2000 // 2 秒内连续按两次
+
     //倒计时
     private var onlineCheckTimeoutHandler: Handler? = null
     private var onlineCheckTimeoutRunnable: Runnable? = null
@@ -84,7 +88,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var mqttTopicDark: String
     private lateinit var mqttTopicDarkResult: String
     private lateinit var mqttTopicLastWill: String
-    val mqttSslContext: SSLContext = SSLContext.getInstance("TLSv1.3")
+    private val mqttSslContext: SSLContext = SSLContext.getInstance("TLSv1.3")
 
     //网络变量
     private lateinit var connectivityManager: ConnectivityManager
@@ -278,11 +282,11 @@ class MainActivity : AppCompatActivity() {
 
         //判断证书是否存在，因为涉及文件下载，安卓强制非阻塞
         lifecycleScope.launch(Dispatchers.IO) {
-            val success = getAndCheckCA(this@MainActivity, liteID)
-            if (!success) {
+            val result = getAndCheckCA(this@MainActivity, liteID)
+            if (result != "CASuccess") {
                 // 回到主线程再弹窗
                 launch(Dispatchers.Main) {
-                    showRetryDialog(this@MainActivity, liteID)
+                    showRetryDialog(result,this@MainActivity, liteID)
                 }
             }else {
                 launch(Dispatchers.Main) {
@@ -292,17 +296,26 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun showRetryDialog(context: Context, id: String) {
+    private fun showRetryDialog(result:String,context: Context, id: String) {
+        var title:String = ""
+        var message:String = ""
+        if(result == "CAisRevoked"){
+            title = "证书已被吊销"
+            message = "验证失败，请将页面截图发送给开发者后重试\n"
+        }else if(result == "CAGetFailed"){
+            title = "证书文件下载失败"
+            message = "请将页面截图发送给开发者后重试\n"
+        }
         AlertDialog.Builder(context)
-            .setTitle("证书文件下载失败")
-            .setMessage("请将页面截图发送给开发者后重试\nID: $id")
+            .setTitle(title)
+            .setMessage(message + "ID：$id")
             .setPositiveButton("重试") { _, _ ->
                 lifecycleScope.launch(Dispatchers.IO) {
-                    val success = getAndCheckCA(context, id)
-                    if (!success) {
+                    val result = getAndCheckCA(context, id)
+                    if (result != "CASuccess") {
                         // 回到主线程再弹窗
                         launch(Dispatchers.Main) {
-                            showRetryDialog(context, id)
+                            showRetryDialog(result,context, id)
                         }
                     } else {
                         launch(Dispatchers.Main) {
@@ -316,7 +329,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     //证书初始化流程
-    private fun getAndCheckCA(context: Context, id: String): Boolean {
+    private fun getAndCheckCA(context: Context, id: String): String {
         val clientEnPath = File(context.filesDir, "$id.en")
         val caEnPath = File(context.filesDir, "ca.en")
 
@@ -338,7 +351,7 @@ class MainActivity : AppCompatActivity() {
 
         if (!clientEnPath.exists() || !caEnPath.exists()) {
             LogUtils.log(Log.ERROR, kTag, "证书文件下载失败")
-            return false
+            return "CAGetFailed"
         }
 
         //验证吊销
@@ -346,7 +359,7 @@ class MainActivity : AppCompatActivity() {
         if (key.isEmpty()) {
             LogUtils.log(Log.ERROR, kTag, "密钥生成失败")
             // 处理解密失败的情况，比如返回或终止操作
-            return false
+            return "CAGetFailed"
         }
 
         val p12Bytes = FileInputStream(clientEnPath).use { inputStream ->
@@ -356,7 +369,7 @@ class MainActivity : AppCompatActivity() {
             LogUtils.log(Log.ERROR, kTag, "解密证书文件失败")
             // 处理解密失败的情况，比如返回或终止操作
             Toast.makeText(this@MainActivity, "解密证书文件失败", Toast.LENGTH_LONG).show()
-            return false
+            return "CAGetFailed"
         }
         val caBytes = FileInputStream(caEnPath).use { inputStream ->
             aesDecryptInMemory(inputStream, key)
@@ -365,7 +378,7 @@ class MainActivity : AppCompatActivity() {
             LogUtils.log(Log.ERROR, kTag, "解密 CA 文件失败")
             // 处理解密失败的情况，比如返回或终止操作
             Toast.makeText(this@MainActivity, "解密 CA 文件失败", Toast.LENGTH_LONG).show()
-            return false
+            return "CAGetFailed"
         }
 
         // 加载 .p12 文件
@@ -388,13 +401,13 @@ class MainActivity : AppCompatActivity() {
             if (crl.isRevoked(clientCert)) {
                 LogUtils.log(Log.ERROR, kTag, "客户端证书已被吊销")
                 Toast.makeText(this@MainActivity, "证书已被吊销，禁止连接", Toast.LENGTH_LONG).show()
-                return false
+                return "CAisRevoked"
             } else {
                 LogUtils.log(Log.INFO, kTag, "客户端证书有效，未被吊销")
             }
         } catch (e: Exception) {
             LogUtils.log(Log.WARN,kTag, "P12 证书加载失败: ${e.message}")
-            return false
+            return "CAisRevoked"
         }
 
         // 创建 KeyManagerFactory 来管理客户端证书和私钥
@@ -422,10 +435,10 @@ class MainActivity : AppCompatActivity() {
             LogUtils.log(Log.DEBUG,kTag, "mqttSslContext 初始化成功")
         } catch (e: Exception) {
             LogUtils.log(Log.WARN,kTag, "mqttSslContext 初始化失败: ${e.message}")
-            return false
+            return "CAGetFailed"
         }
 
-        return true
+        return "CASuccess"
     }
 
     private fun downloadFileSuspend(urlStr: String, destFile: File){
@@ -658,7 +671,7 @@ class MainActivity : AppCompatActivity() {
         try {
             mqttClient.unsubscribe(topics, null, object : IMqttActionListener {
                 override fun onSuccess(asyncActionToken: IMqttToken?) {
-                    LogUtils.log(Log.DEBUG,"AuToDark.connectToMqtt", "成功解除订阅主题: ${topics.joinToString(", ")}")
+                    LogUtils.log(Log.DEBUG,kTag, "成功解除订阅主题: ${topics.joinToString(", ")}")
                 }
 
                 override fun onFailure(asyncActionToken: IMqttToken?, exception: Throwable?) {
@@ -767,9 +780,12 @@ class MainActivity : AppCompatActivity() {
         super.onDestroy()
         try {
             // 取消订阅
-            unsubscribeFromTopics(arrayOf(mqttTopicCheckAppAlive, mqttTopicDark))
-            //断开连接
-            mqttClient.disconnect()
+            if(btnIsConnected){
+                val topicsToSubscribe = arrayOf(mqttTopicCheckAppAliveResult,mqttTopicDarkResult,mqttTopicLastWill)
+                unsubscribeFromTopics(topicsToSubscribe)
+                //断开连接
+                mqttClient.disconnect()
+            }
             // 注销网络回调
             connectivityManager.unregisterNetworkCallback(networkCallback)
         } catch (e: MqttException) {
@@ -777,4 +793,13 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    override fun onBackPressed() {
+        val currentTime = System.currentTimeMillis()
+        if (currentTime - lastBackPressTime > backPressInterval) {
+            Toast.makeText(this, "再按一次退出应用", Toast.LENGTH_SHORT).show()
+            lastBackPressTime = currentTime
+        } else {
+            super.onBackPressed() // 正常退出
+        }
+    }
 }
