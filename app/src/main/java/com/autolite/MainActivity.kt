@@ -290,7 +290,7 @@ class MainActivity : AppCompatActivity() {
                 }
             }else {
                 launch(Dispatchers.Main) {
-                    Toast.makeText(this@MainActivity, "CA证书验证成功", Toast.LENGTH_LONG).show()
+//                    Toast.makeText(this@MainActivity, "CA证书验证成功", Toast.LENGTH_LONG).show()
                 }
             }
         }
@@ -320,7 +320,7 @@ class MainActivity : AppCompatActivity() {
                         }
                     } else {
                         launch(Dispatchers.Main) {
-                            Toast.makeText(this@MainActivity, "CA证书验证成功", Toast.LENGTH_LONG).show()
+//                            Toast.makeText(this@MainActivity, "CA证书验证成功", Toast.LENGTH_LONG).show()
                         }
                     }
                 }
@@ -513,7 +513,7 @@ class MainActivity : AppCompatActivity() {
                 // 如果当前没有连接，提示用户
                 LogUtils.log(Log.DEBUG,kTag, "当前没有连接")
                 runOnUiThread {
-                    Toast.makeText(this@MainActivity, "当前没有连接", Toast.LENGTH_SHORT).show()
+//                    Toast.makeText(this@MainActivity, "当前没有连接", Toast.LENGTH_SHORT).show()
                 }
             }
         } catch (e: MqttException) {
@@ -572,7 +572,7 @@ class MainActivity : AppCompatActivity() {
                     val topicsToSubscribe = arrayOf(mqttTopicDarkResult,mqttTopicCheckAppAliveResult,mqttTopicLastWill)
                     val qosLevels = intArrayOf(2,2,2) // QoS 级别
                     subscribeToTopics(topicsToSubscribe, qosLevels) // 连接成功后订阅主题
-                    Toast.makeText(this@MainActivity, "Mqtt主题订阅成功", Toast.LENGTH_LONG).show()
+//                    Toast.makeText(this@MainActivity, "Mqtt主题订阅成功", Toast.LENGTH_LONG).show()
                 }
 
                 override fun onFailure(asyncActionToken: IMqttToken?, exception: Throwable?) {
@@ -612,7 +612,7 @@ class MainActivity : AppCompatActivity() {
                 btnIsConnected = true
                 if (reconnect) {
                     LogUtils.log(Log.INFO, kTag, "重连成功")
-                    Toast.makeText(this@MainActivity, "mqtt重连成功", Toast.LENGTH_LONG).show()
+//                    Toast.makeText(this@MainActivity, "mqtt重连成功", Toast.LENGTH_LONG).show()
                 } else {
                     LogUtils.log(Log.INFO, kTag, "初次连接成功")
                     return
@@ -639,7 +639,7 @@ class MainActivity : AppCompatActivity() {
                                     btnCheckOnline.setBackgroundColor(lightBlue)
                                     btnCheckOnline.text = "检查是否在线"
                                     btnCheckOnline.isEnabled = true
-                                }, 1500)
+                                }, 1000)
 
 
 
@@ -648,16 +648,25 @@ class MainActivity : AppCompatActivity() {
                         mqttTopicDarkResult -> {
                             darkCheckTimeoutHandler?.removeCallbacks(darkCheckTimeoutRunnable!!)
                             runOnUiThread {
-                                if(msg.contains("极速打卡") and msg.contains("成功")){
+                                //成功
+                                if(msg.contains("极速打卡") && msg.contains("成功")){
                                     btnDark.text = "打卡成功！"
                                     btnDark.setBackgroundColor(lightGreen)
                                     tvDarkResult.text = msg
-                                }
-                                Handler(Looper.getMainLooper()).postDelayed({
+                                    Handler(Looper.getMainLooper()).postDelayed({
+                                        // 延时后的逻辑
+                                        btnDark.setBackgroundColor(lightBlue)
+                                        btnDark.text = "打卡"
+                                        btnDark.isEnabled = true
+                                    }, 1000)
+                                }else if(msg.contains("未监听到打卡成功的通知")){
+                                    //打卡失败
                                     btnDark.setBackgroundColor(lightBlue)
+                                    tvDarkResult.text = msg
                                     btnDark.text = "打卡"
                                     btnDark.isEnabled = true
-                                }, 1500)
+                                }
+
                             }
                         }
                         mqttTopicLastWill -> {
@@ -735,7 +744,7 @@ class MainActivity : AppCompatActivity() {
         } catch (e: MqttException) {
             LogUtils.log(Log.ERROR,kTag, "消息发布失败: ${e.message}")
         }
-        Toast.makeText(this@MainActivity, "mqtt发布消息成功", Toast.LENGTH_LONG).show()
+        Toast.makeText(this@MainActivity, "请求消息成功", Toast.LENGTH_LONG).show()
     }
 
     // 计算字符串的SHA-256哈希
