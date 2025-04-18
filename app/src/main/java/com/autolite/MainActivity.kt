@@ -2,7 +2,6 @@ package com.autolite
 
 import android.annotation.SuppressLint
 import android.content.Context
-import android.content.res.Resources
 import android.graphics.Color
 import android.net.ConnectivityManager
 import android.net.Network
@@ -286,19 +285,20 @@ class MainActivity : AppCompatActivity() {
             if (result != "CASuccess") {
                 // 回到主线程再弹窗
                 launch(Dispatchers.Main) {
+                    deleteCA(this@MainActivity, liteID)
                     showRetryDialog(result,this@MainActivity, liteID)
                 }
             }else {
                 launch(Dispatchers.Main) {
-                    Toast.makeText(this@MainActivity, "CA证书获取成功", Toast.LENGTH_LONG).show()
+                    Toast.makeText(this@MainActivity, "CA证书验证成功", Toast.LENGTH_LONG).show()
                 }
             }
         }
     }
 
     private fun showRetryDialog(result:String,context: Context, id: String) {
-        var title:String = ""
-        var message:String = ""
+        var title = ""
+        var message = ""
         if(result == "CAisRevoked"){
             title = "证书已被吊销"
             message = "验证失败，请将页面截图发送给开发者后重试\n"
@@ -311,21 +311,50 @@ class MainActivity : AppCompatActivity() {
             .setMessage(message + "ID：$id")
             .setPositiveButton("重试") { _, _ ->
                 lifecycleScope.launch(Dispatchers.IO) {
-                    val result = getAndCheckCA(context, id)
-                    if (result != "CASuccess") {
+                    val result2 = getAndCheckCA(context, id)
+                    if (result2 != "CASuccess") {
                         // 回到主线程再弹窗
                         launch(Dispatchers.Main) {
-                            showRetryDialog(result,context, id)
+                            deleteCA(context, id)
+                            showRetryDialog(result2,context, id)
                         }
                     } else {
                         launch(Dispatchers.Main) {
-                            Toast.makeText(this@MainActivity, "CA证书获取成功", Toast.LENGTH_LONG).show()
+                            Toast.makeText(this@MainActivity, "CA证书验证成功", Toast.LENGTH_LONG).show()
                         }
                     }
                 }
             }
             .setCancelable(false) // 如果需要设置为不可取消
             .show()
+    }
+
+    //删除ca文件
+    private fun deleteCA(context: Context, ID: String) {
+        val clientEnPath = File(context.filesDir, "$ID.en")
+        val caEnPath = File(context.filesDir, "ca.en")
+
+        if (clientEnPath.exists()) {
+            val deleted = clientEnPath.delete()
+            if (deleted) {
+                LogUtils.log(Log.DEBUG, kTag, "客户端证书删除成功")
+            } else {
+                LogUtils.log(Log.WARN, kTag, "客户端证书删除失败")
+            }
+        } else {
+            LogUtils.log(Log.DEBUG, kTag, "客户端证书已删除")
+        }
+
+        if (!caEnPath.exists()) {
+            val deleted = caEnPath.delete()
+            if (deleted) {
+                LogUtils.log(Log.DEBUG, kTag, "CA证书删除成功")
+            } else {
+                LogUtils.log(Log.WARN, kTag, "CA证书删除失败")
+            }
+        }else {
+            LogUtils.log(Log.DEBUG, kTag, "CA证书已删除")
+        }
     }
 
     //证书初始化流程
@@ -520,16 +549,7 @@ class MainActivity : AppCompatActivity() {
             keepAliveInterval = 30
             userName = user
             password = pwd.toCharArray()
-//
-//            // 设置遗嘱消息
-//            val willQoS = 2
-//
-//            // 获取当前时间戳
-//            val willMessage = "darkPhone_offline_at_" + System.currentTimeMillis().timestampToCompleteDate()
-//
-//            setWill(mqttTopicLastWill, willMessage.toByteArray(), willQoS, true)
 
-            // 使用自定义的 mqttSslContext
             socketFactory = mqttSslContext.socketFactory
         }
         options.isAutomaticReconnect = true
@@ -771,11 +791,6 @@ class MainActivity : AppCompatActivity() {
         return Settings.Secure.getString(this.contentResolver, Settings.Secure.ANDROID_ID)
     }
 
-//    private fun Long.timestampToCompleteDate(): String {
-//        val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.CHINA)
-//        return dateFormat.format(Date(this))
-//    }
-
     override fun onDestroy() {
         super.onDestroy()
         try {
@@ -793,6 +808,8 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    //两次以退出
+    @Deprecated("Deprecated in Java")
     override fun onBackPressed() {
         val currentTime = System.currentTimeMillis()
         if (currentTime - lastBackPressTime > backPressInterval) {
