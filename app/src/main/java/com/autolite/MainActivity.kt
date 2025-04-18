@@ -631,26 +631,42 @@ class MainActivity : AppCompatActivity() {
                         mqttTopicCheckAppAliveResult -> {
                             onlineCheckTimeoutHandler?.removeCallbacks(onlineCheckTimeoutRunnable!!)
                             runOnUiThread {
+                                btnCheckOnline.text = "在线中！"
+                                btnCheckOnline.setBackgroundColor(lightGreen)
                                 tvCheckResult.text = msg
-                                btnCheckOnline.isEnabled = true
-                                btnCheckOnline.setBackgroundColor(lightBlue)
-                                btnCheckOnline.text = "检查是否在线"
+                                Handler(Looper.getMainLooper()).postDelayed({
+                                    // 延时后的逻辑
+                                    btnCheckOnline.setBackgroundColor(lightBlue)
+                                    btnCheckOnline.text = "检查是否在线"
+                                    btnCheckOnline.isEnabled = true
+                                }, 1500)
+
+
+
                             }
                         }
                         mqttTopicDarkResult -> {
                             darkCheckTimeoutHandler?.removeCallbacks(darkCheckTimeoutRunnable!!)
                             runOnUiThread {
-                                tvDarkResult.visibility = View.VISIBLE
-                                tvDarkResult.text = msg
-                                btnDark.isEnabled = true
-                                btnDark.setBackgroundColor(lightBlue)
-                                btnDark.text = "打卡"
+                                if(msg.contains("极速打卡") and msg.contains("成功")){
+                                    btnDark.text = "打卡成功！"
+                                    btnDark.setBackgroundColor(lightGreen)
+                                    tvDarkResult.text = msg
+                                }
+                                Handler(Looper.getMainLooper()).postDelayed({
+                                    btnDark.setBackgroundColor(lightBlue)
+                                    btnDark.text = "打卡"
+                                    btnDark.isEnabled = true
+                                }, 1500)
                             }
                         }
                         mqttTopicLastWill -> {
                             runOnUiThread {
-                                tvOfflineReport.visibility = View.VISIBLE
-                                tvOfflineReport.text = msg
+                                tvOfflineReport.text = ""
+                                Handler(Looper.getMainLooper()).postDelayed({
+                                    tvOfflineReport.text = msg
+                                }, 1000)
+
                             }
                         }
                     }
@@ -686,9 +702,8 @@ class MainActivity : AppCompatActivity() {
 
     //mqtt解除订阅
     private fun unsubscribeFromTopics(topics: Array<String>) {
-        LogUtils.log(Log.DEBUG,kTag, "尝试解除订阅主题: ${topics.joinToString(", ")}")
-
         try {
+            LogUtils.log(Log.DEBUG,kTag, "尝试解除订阅主题: ${topics.joinToString(", ")}")
             mqttClient.unsubscribe(topics, null, object : IMqttActionListener {
                 override fun onSuccess(asyncActionToken: IMqttToken?) {
                     LogUtils.log(Log.DEBUG,kTag, "成功解除订阅主题: ${topics.joinToString(", ")}")

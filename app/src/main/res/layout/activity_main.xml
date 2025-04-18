@@ -118,13 +118,26 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginStart="24dp"
-            android:layout_marginTop="24dp"
+            android:layout_marginTop="8dp"
             android:layout_marginEnd="24dp"
             android:layout_marginBottom="24dp"
             android:background="@drawable/bg_card"
             android:orientation="vertical"
             android:padding="20dp">
-        <!-- 下线报告 -->
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="下线报告："
+                android:textSize="20sp"
+                android:textColor="#000000"/>
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="打不上卡请查看掉线时间，检查是否已掉线"
+                android:textSize="13sp"
+                android:textColor="#888888"/>
+
             <TextView
                 android:id="@+id/tv_offline_report"
                 android:layout_width="match_parent"
@@ -132,8 +145,8 @@
                 android:visibility="visible"
                 android:layout_marginTop="12dp"
                 android:background="@drawable/bg_result"
-                android:padding="12dp"
-                android:text="下线报告"
+                android:padding="22dp"
+                android:text="掉线时间"
                 android:textSize="16sp" />
         </LinearLayout>
     </LinearLayout>

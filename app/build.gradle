@@ -1,3 +1,5 @@
+import java.text.SimpleDateFormat
+
 plugins {
     id 'com.android.application'
     id 'org.jetbrains.kotlin.android'
@@ -13,7 +15,6 @@ android {
         targetSdk 33
         versionCode 2012
         versionName "2.0.1.2"
-        versionName "1.0"
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -31,6 +32,17 @@ android {
     kotlinOptions {
         jvmTarget = '1.8'
     }
+
+    applicationVariants.configureEach { variant ->
+        variant.outputs.configureEach {
+            outputFileName = "AutoLite" + getBuildDate() + "_" + defaultConfig.versionName + ".apk"
+        }
+    }
+}
+
+static def getBuildDate() {
+    def dateFormat = new java.text.SimpleDateFormat("yyyyMMdd_HH_mm", Locale.CHINA)
+    return dateFormat.format(new Date())
 }
 
 dependencies {
