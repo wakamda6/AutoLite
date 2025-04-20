@@ -54,7 +54,8 @@
                 android:layout_alignParentEnd="true"
                 android:layout_margin="16dp"
                 android:text="连接"
-                android:backgroundTint="#808080"/>
+                android:backgroundTint="#808080"
+                android:textColor="#000000" />
         </LinearLayout>
 
         <!-- 主体卡片布局 -->
@@ -78,7 +79,7 @@
                 android:layout_marginTop="8dp"
                 android:backgroundTint="#808080"
                 android:text="检查是否在线"
-                android:textColor="@android:color/white" />
+                android:textColor="#000000" />
 
             <!-- 检查结果 -->
             <TextView
@@ -89,7 +90,8 @@
                 android:layout_marginTop="12dp"
                 android:background="@drawable/bg_result"
                 android:padding="22dp"
-                android:textSize="16sp" />
+                android:textSize="16sp"
+                android:textColor="#000000"/>
 
             <!-- 打卡按钮 -->
             <Button
@@ -99,7 +101,7 @@
                 android:layout_marginTop="20dp"
                 android:backgroundTint="#808080"
                 android:text="打卡"
-                android:textColor="@android:color/white" />
+                android:textColor="#000000" />
 
             <!-- 打卡结果 -->
             <TextView
@@ -110,7 +112,8 @@
                 android:layout_marginTop="12dp"
                 android:background="@drawable/bg_result"
                 android:padding="22dp"
-                android:textSize="16sp" />
+                android:textSize="16sp"
+                android:textColor="#000000"/>
         </LinearLayout>
 
         <LinearLayout
@@ -134,9 +137,9 @@
             <TextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="打不上卡请查看掉线时间，检查是否已掉线"
+                android:text="打不上卡时请查看掉线时间，检查是否已掉线"
                 android:textSize="13sp"
-                android:textColor="#888888"/>
+                android:textColor="#E0E0E0"/>
 
             <TextView
                 android:id="@+id/tv_offline_report"
@@ -147,7 +150,8 @@
                 android:background="@drawable/bg_result"
                 android:padding="22dp"
                 android:text="掉线时间"
-                android:textSize="16sp" />
+                android:textSize="16sp"
+                android:textColor="#000000"/>
         </LinearLayout>
     </LinearLayout>
 
