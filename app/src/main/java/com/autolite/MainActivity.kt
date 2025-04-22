@@ -41,6 +41,7 @@ import java.net.URL
 import java.security.MessageDigest
 import java.security.cert.X509CRL
 import java.security.cert.X509Certificate
+import java.util.concurrent.TimeUnit
 
 
 class MainActivity : AppCompatActivity() {
@@ -51,7 +52,11 @@ class MainActivity : AppCompatActivity() {
     private var lastBackPressTime = 0L
     private val backPressInterval = 2000 // 2 秒内连续按两次
 
-    //倒计时
+    //剩余天数
+    private var days= 0L
+    private var hours= 0L
+
+    //邮件发送间隔倒计时
     private var onlineCheckTimeoutHandler: Handler? = null
     private var onlineCheckTimeoutRunnable: Runnable? = null
     private var darkCheckTimeoutHandler: Handler? = null
@@ -64,6 +69,7 @@ class MainActivity : AppCompatActivity() {
     //UI组件
     private lateinit var btnScan: Button
     private lateinit var btnConnect: Button
+    private lateinit var tvTimeout: TextView
     private lateinit var btnCheckOnline: Button
     private lateinit var btnDark: Button
     private lateinit var tvCheckResult: TextView
@@ -149,6 +155,7 @@ class MainActivity : AppCompatActivity() {
         // 绑定视图
         btnScan = findViewById(R.id.btn_scan)
         btnConnect = findViewById(R.id.btn_connect)
+        tvTimeout = findViewById(R.id.tv_timeout)
 
         btnCheckOnline = findViewById(R.id.btn_check_online)
         btnDark = findViewById(R.id.btn_dark)
@@ -299,12 +306,19 @@ class MainActivity : AppCompatActivity() {
     private fun showRetryDialog(result:String,context: Context, id: String) {
         var title = ""
         var message = ""
-        if(result == "CAisRevoked"){
-            title = "证书已被吊销"
-            message = "验证失败，请将页面截图发送给开发者后重试\n"
-        }else if(result == "CAGetFailed"){
-            title = "证书文件下载失败"
-            message = "请将页面截图发送给开发者后重试\n"
+        when (result) {
+            "CAisRevoked" -> {
+                title = "证书已被吊销"
+                message = "验证失败，请将页面截图发送给开发者后重试\n"
+            }
+            "CAGetFailed" -> {
+                title = "证书文件下载失败"
+                message = "请将页面截图发送给开发者后重试\n"
+            }
+            "CAisTimeout" -> {
+                title = "证书已过期"
+                message = "请联系开发者购买时长\n"
+            }
         }
         AlertDialog.Builder(context)
             .setTitle(title)
@@ -317,10 +331,6 @@ class MainActivity : AppCompatActivity() {
                         launch(Dispatchers.Main) {
                             deleteCA(context, id)
                             showRetryDialog(result2,context, id)
-                        }
-                    } else {
-                        launch(Dispatchers.Main) {
-//                            Toast.makeText(this@MainActivity, "CA证书验证成功", Toast.LENGTH_LONG).show()
                         }
                     }
                 }
@@ -341,19 +351,15 @@ class MainActivity : AppCompatActivity() {
             } else {
                 LogUtils.log(Log.WARN, kTag, "客户端证书删除失败")
             }
-        } else {
-            LogUtils.log(Log.DEBUG, kTag, "客户端证书已删除")
         }
 
-        if (!caEnPath.exists()) {
+        if (caEnPath.exists()) {
             val deleted = caEnPath.delete()
             if (deleted) {
                 LogUtils.log(Log.DEBUG, kTag, "CA证书删除成功")
             } else {
                 LogUtils.log(Log.WARN, kTag, "CA证书删除失败")
             }
-        }else {
-            LogUtils.log(Log.DEBUG, kTag, "CA证书已删除")
         }
     }
 
@@ -383,7 +389,6 @@ class MainActivity : AppCompatActivity() {
             return "CAGetFailed"
         }
 
-        //验证吊销
         val key = generateKeyFromString(liteID)
         if (key.isEmpty()) {
             LogUtils.log(Log.ERROR, kTag, "密钥生成失败")
@@ -433,6 +438,28 @@ class MainActivity : AppCompatActivity() {
                 return "CAisRevoked"
             } else {
                 LogUtils.log(Log.INFO, kTag, "客户端证书有效，未被吊销")
+
+                // 计算剩余天数
+                val now = Date()
+                val notAfter = clientCert.notAfter
+                val diffInMillies = notAfter.time - now.time
+                if (diffInMillies <= 0) {
+                    // 证书已过期
+                    days = 0
+                    hours = 0
+                    LogUtils.log(Log.WARN,kTag, "证书已过期")
+                    return "CAisTimeout"
+                } else {
+                    days = TimeUnit.MILLISECONDS.toDays(diffInMillies)
+                    hours = TimeUnit.MILLISECONDS.toHours(diffInMillies) % 24
+
+                    val times = "剩余时长:"+days+"天"+hours+"小时"
+                    runOnUiThread {
+                        tvTimeout.text = times
+                    }
+                }
+
+                LogUtils.log(Log.WARN,kTag, "证书剩余时间：$days 天 $hours 小时")
             }
         } catch (e: Exception) {
             LogUtils.log(Log.WARN,kTag, "P12 证书加载失败: ${e.message}")
