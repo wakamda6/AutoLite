@@ -295,10 +295,6 @@ class MainActivity : AppCompatActivity() {
                     deleteCA(this@MainActivity, liteID)
                     showRetryDialog(result,this@MainActivity, liteID)
                 }
-            }else {
-                launch(Dispatchers.Main) {
-//                    Toast.makeText(this@MainActivity, "CA证书验证成功", Toast.LENGTH_LONG).show()
-                }
             }
         }
     }
