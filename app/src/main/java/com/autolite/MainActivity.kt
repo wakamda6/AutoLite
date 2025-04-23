@@ -595,7 +595,6 @@ class MainActivity : AppCompatActivity() {
                     val topicsToSubscribe = arrayOf(mqttTopicDarkResult,mqttTopicCheckAppAliveResult,mqttTopicLastWill)
                     val qosLevels = intArrayOf(2,2,2) // QoS 级别
                     subscribeToTopics(topicsToSubscribe, qosLevels) // 连接成功后订阅主题
-//                    Toast.makeText(this@MainActivity, "Mqtt主题订阅成功", Toast.LENGTH_LONG).show()
                 }
 
                 override fun onFailure(asyncActionToken: IMqttToken?, exception: Throwable?) {
@@ -612,6 +611,10 @@ class MainActivity : AppCompatActivity() {
                         LogUtils.log(Log.ERROR, kTag, "未知错误: ${exception?.message}")
                     }
                     Toast.makeText(this@MainActivity, "mqtt通信失败", Toast.LENGTH_LONG).show()
+                    btnConnect.setBackgroundColor(lightBlue)
+                    btnConnect.text = "连接"
+                    btnCheckOnline.setBackgroundColor(Color.GRAY)  // 假设断开时按钮颜色设置为灰色
+                    btnDark.setBackgroundColor(Color.GRAY)  // 断开时，设置按钮颜色为灰色
                     btnIsConnected = false
                 }
             })
@@ -628,6 +631,10 @@ class MainActivity : AppCompatActivity() {
                     }.toString()
                     LogUtils.log(Log.ERROR, kTag, "堆栈信息：\n$stackTrace")
                 }
+                btnConnect.setBackgroundColor(lightBlue)
+                btnConnect.text = "连接"
+                btnCheckOnline.setBackgroundColor(Color.GRAY)  // 假设断开时按钮颜色设置为灰色
+                btnDark.setBackgroundColor(Color.GRAY)  // 断开时，设置按钮颜色为灰色
                 btnIsConnected = false
             }
 
