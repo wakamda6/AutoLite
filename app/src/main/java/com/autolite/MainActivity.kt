@@ -103,7 +103,7 @@ class MainActivity : AppCompatActivity() {
     private val barcodeLauncher = registerForActivityResult(ScanContract()) { result ->
         if (result.contents != null) {
             Toast.makeText(this, "扫码成功", Toast.LENGTH_LONG).show()
-            LogUtils.log(Log.DEBUG,"main","拿到扫码结果id:$darkID")
+            LogUtils.log(Log.INFO, kTag, "拿到扫码结果id:${darkID}")
             darkID = result.contents.toString()
             // 保存darkID到内部存储
             val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -257,8 +257,8 @@ class MainActivity : AppCompatActivity() {
         liteID = getUUID()
         user = liteID
         pwd = liteID
-        LogUtils.log(Log.DEBUG,"main", "设备唯一ID：$liteID")
-        LogUtils.log(Log.DEBUG,"main", "加载 MQTT 配置文件")
+        LogUtils.log(Log.INFO, kTag, "控制设备唯一ID：$liteID")
+        LogUtils.log(Log.INFO, kTag, "加载 MQTT 配置文件")
 
         //将darkID保存
         val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -267,7 +267,7 @@ class MainActivity : AppCompatActivity() {
         if (savedDarkID != null) {
             // 如果已经保存了darkID，则直接使用
             darkID = savedDarkID
-            LogUtils.log(Log.DEBUG, "main", "从存储中获取到darkID:$darkID")
+            LogUtils.log(Log.INFO, kTag, "从存储中获取到darkID:$darkID")
             initWhenDarkIdIsReady()
         }
 
@@ -275,7 +275,7 @@ class MainActivity : AppCompatActivity() {
         connectivityManager = getSystemService(CONNECTIVITY_SERVICE) as ConnectivityManager
         networkCallback = object : ConnectivityManager.NetworkCallback() {
             override fun onAvailable(network: Network) {
-                LogUtils.log(Log.DEBUG,"main", "网络连接可用")
+                LogUtils.log(Log.INFO, kTag, "网络连接可用")
             }
 
             override fun onLost(network: Network) {
@@ -458,7 +458,7 @@ class MainActivity : AppCompatActivity() {
                 LogUtils.log(Log.WARN,kTag, "证书剩余时间：$days 天 $hours 小时")
             }
         } catch (e: Exception) {
-            LogUtils.log(Log.WARN,kTag, "P12 证书加载失败: ${e.message}")
+            LogUtils.log(Log.ERROR,kTag, "P12 证书加载失败: ${e.message}")
             return "CAisRevoked"
         }
 
@@ -486,7 +486,7 @@ class MainActivity : AppCompatActivity() {
             mqttSslContext.init(keyManagerFactory.keyManagers, trustManagerFactory.trustManagers, null)
             LogUtils.log(Log.DEBUG,kTag, "mqttSslContext 初始化成功")
         } catch (e: Exception) {
-            LogUtils.log(Log.WARN,kTag, "mqttSslContext 初始化失败: ${e.message}")
+            LogUtils.log(Log.ERROR,kTag, "mqttSslContext 初始化失败: ${e.message}")
             return "CAGetFailed"
         }
 
@@ -510,12 +510,12 @@ class MainActivity : AppCompatActivity() {
                 input.close()
                 LogUtils.log(Log.DEBUG,kTag, "下载成功：${destFile.name}")
             } else {
-                LogUtils.log(Log.DEBUG,kTag, "下载失败：$urlStr，code=${connection.responseCode}")
+                LogUtils.log(Log.ERROR,kTag, "下载失败：$urlStr，code=${connection.responseCode}")
             }
 
             connection.disconnect()
         } catch (e: Exception) {
-            LogUtils.log(Log.DEBUG,kTag, "异常下载 $urlStr: ${e.message}")
+            LogUtils.log(Log.ERROR,kTag, "异常下载 $urlStr: ${e.message}")
         }
     }
 
@@ -534,20 +534,20 @@ class MainActivity : AppCompatActivity() {
                 btnIsConnected = false
             } else {
                 // 如果当前没有连接，提示用户
-                LogUtils.log(Log.DEBUG,kTag, "当前没有连接")
+                LogUtils.log(Log.WARN,kTag, "当前没有连接")
                 runOnUiThread {
 //                    Toast.makeText(this@MainActivity, "当前没有连接", Toast.LENGTH_SHORT).show()
                 }
             }
         } catch (e: MqttException) {
             // 异常处理，捕获 MQTT 客户端断开连接时可能发生的错误
-            LogUtils.log(Log.DEBUG,kTag, "断开连接时出错: ${e.message}")
+            LogUtils.log(Log.ERROR,kTag, "断开连接时出错: ${e.message}")
             runOnUiThread {
                 Toast.makeText(this@MainActivity, "断开连接时出错: ${e.message}", Toast.LENGTH_SHORT).show()
             }
         } catch (e: Exception) {
             // 捕获其他异常
-            LogUtils.log(Log.DEBUG,kTag, "发生未知错误: ${e.message}")
+            LogUtils.log(Log.ERROR,kTag, "发生未知错误: ${e.message}")
             e.printStackTrace()  // 输出堆栈跟踪信息
             runOnUiThread {
                 Toast.makeText(this@MainActivity, "发生未知错误: ${e.message}", Toast.LENGTH_SHORT).show()
@@ -560,7 +560,7 @@ class MainActivity : AppCompatActivity() {
 
         // 确保网络连接
         if (!NetworkUtils.isNetworkAvailable(this)) {
-            LogUtils.log(Log.WARN,kTag, "网络不可用，无法连接到 MQTT 代理")
+            LogUtils.log(Log.ERROR,kTag, "网络不可用，无法连接到 MQTT 代理")
             Toast.makeText(this@MainActivity, "网络异常", Toast.LENGTH_LONG).show()
             return
         }
