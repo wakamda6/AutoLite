@@ -532,12 +532,6 @@ class MainActivity : AppCompatActivity() {
                 btnCheckOnline.setBackgroundColor(Color.GRAY)  // 假设断开时按钮颜色设置为灰色
                 btnDark.setBackgroundColor(Color.GRAY)  // 断开时，设置按钮颜色为灰色
                 btnIsConnected = false
-            } else {
-                // 如果当前没有连接，提示用户
-                LogUtils.log(Log.WARN,kTag, "当前没有连接")
-                runOnUiThread {
-//                    Toast.makeText(this@MainActivity, "当前没有连接", Toast.LENGTH_SHORT).show()
-                }
             }
         } catch (e: MqttException) {
             // 异常处理，捕获 MQTT 客户端断开连接时可能发生的错误
@@ -610,7 +604,7 @@ class MainActivity : AppCompatActivity() {
                         // 其他异常类型
                         LogUtils.log(Log.ERROR, kTag, "未知错误: ${exception?.message}")
                     }
-                    Toast.makeText(this@MainActivity, "mqtt通信失败", Toast.LENGTH_LONG).show()
+                    Toast.makeText(this@MainActivity, "通信失败", Toast.LENGTH_LONG).show()
                     btnConnect.setBackgroundColor(lightBlue)
                     btnConnect.text = "连接"
                     btnCheckOnline.setBackgroundColor(Color.GRAY)  // 假设断开时按钮颜色设置为灰色
@@ -642,7 +636,6 @@ class MainActivity : AppCompatActivity() {
                 btnIsConnected = true
                 if (reconnect) {
                     LogUtils.log(Log.INFO, kTag, "重连成功")
-//                    Toast.makeText(this@MainActivity, "mqtt重连成功", Toast.LENGTH_LONG).show()
                 } else {
                     LogUtils.log(Log.INFO, kTag, "初次连接成功")
                     return
@@ -871,6 +864,22 @@ class MainActivity : AppCompatActivity() {
             lastBackPressTime = currentTime
         } else {
             super.onBackPressed() // 正常退出
+        }
+    }
+
+    //程序再次进入时要检测证书
+    override fun onRestart() {
+        super.onRestart()
+
+        lifecycleScope.launch(Dispatchers.IO) {
+            val result = getAndCheckCA(this@MainActivity, liteID)
+            if (result != "CASuccess") {
+                // 回到主线程再弹窗
+                launch(Dispatchers.Main) {
+                    deleteCA(this@MainActivity, liteID)
+                    showRetryDialog(result,this@MainActivity, liteID)
+                }
+            }
         }
     }
 }
