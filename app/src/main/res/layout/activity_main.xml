@@ -70,6 +70,17 @@
                     android:textColor="#000000" />
             </LinearLayout>
 
+            <!-- ID -->
+            <TextView
+                android:id="@+id/tv_id"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="本机ID："
+                android:padding="5dp"
+                android:textSize="15sp"
+                android:textColor="#000000"
+                android:gravity="start"/>
+
             <!-- 剩余时长 -->
             <TextView
                 android:id="@+id/tv_timeout"

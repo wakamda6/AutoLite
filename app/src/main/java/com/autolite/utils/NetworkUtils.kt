@@ -1,4 +1,4 @@
-package com.autolite
+package com.autolite.utils
 
 import android.content.Context
 import android.net.ConnectivityManager

@@ -3,58 +3,36 @@ package com.autolite
 import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Color
-import android.net.ConnectivityManager
-import android.net.Network
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
-import android.provider.Settings
 import android.util.Log
-import android.view.View
 import android.widget.Button
 import android.widget.TextView
 import android.widget.Toast
+import androidx.activity.viewModels
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
-import androidx.lifecycle.lifecycleScope
+import com.autolite.model.InitState
+import com.autolite.model.InitViewModel
+import com.autolite.model.MqttViewModel
+import com.autolite.model.UiState
+import com.autolite.network.MqttHelper
+import com.autolite.utils.LogUtils
 import com.journeyapps.barcodescanner.ScanContract
 import com.journeyapps.barcodescanner.ScanOptions
-import info.mqtt.android.service.Ack
 import org.eclipse.paho.client.mqttv3.*
 import java.io.*
-import java.security.KeyStore
-import java.security.cert.CertificateFactory
 import java.util.*
-import javax.crypto.Cipher
-import javax.crypto.CipherInputStream
-import javax.crypto.spec.IvParameterSpec
-import javax.crypto.spec.SecretKeySpec
-import javax.net.ssl.KeyManagerFactory
-import javax.net.ssl.SSLContext
-import javax.net.ssl.TrustManagerFactory
-import info.mqtt.android.service.MqttAndroidClient
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import org.eclipse.paho.client.mqttv3.MqttConnectOptions
-import java.net.HttpURLConnection
-import java.net.URL
-import java.security.MessageDigest
-import java.security.cert.X509CRL
-import java.security.cert.X509Certificate
-import java.util.concurrent.TimeUnit
 
 
 class MainActivity : AppCompatActivity() {
 
     private val kTag = "main"
 
-    //按两次退出应用
-    private var lastBackPressTime = 0L
-    private val backPressInterval = 2000 // 2 秒内连续按两次
-
-    //剩余天数
-    private var days= 0L
-    private var hours= 0L
+    //ID
+    private var liteID:String = ""
+    private var darkID:String = ""
 
     //邮件发送间隔倒计时
     private var onlineCheckTimeoutHandler: Handler? = null
@@ -62,106 +40,98 @@ class MainActivity : AppCompatActivity() {
     private var darkCheckTimeoutHandler: Handler? = null
     private var darkCheckTimeoutRunnable: Runnable? = null
 
-    // 定义SharedPreferences常量用于保存ID
-    private val PREFS_NAME = "MyPrefs"
-    private val DARK_ID_KEY = "darkID"
-
     //UI组件
     private lateinit var btnScan: Button
     private lateinit var btnConnect: Button
     private lateinit var tvTimeout: TextView
+    private lateinit var tvId: TextView
     private lateinit var btnCheckOnline: Button
     private lateinit var btnDark: Button
     private lateinit var tvCheckResult: TextView
     private lateinit var tvDarkResult: TextView
     private lateinit var tvOfflineReport: TextView
-    private var btnIsConnected = false
 
-    val lightGreen = Color.parseColor("#90EE90")  // 浅绿色
-    val lightBlue = Color.parseColor("#ADD8E6")  //浅蓝色
+    private val certViewModel: InitViewModel by viewModels()
+    private val mqttViewModel: MqttViewModel by viewModels()
+    private lateinit var mqttHelper: MqttHelper
 
-    //mqtt变量
-    private var liteID:String = ""
-    private var darkID:String = ""
-    private lateinit var mqttServerUrl: String
-    private lateinit var mqttClientId: String
-    private lateinit var user: String
-    private lateinit var pwd: String
-    private lateinit var mqttClient: MqttAndroidClient
-    private lateinit var mqttTopicCheckAppAlive: String
-    private lateinit var mqttTopicCheckAppAliveResult: String
-    private lateinit var mqttTopicDark: String
-    private lateinit var mqttTopicDarkResult: String
-    private lateinit var mqttTopicLastWill: String
-    private val mqttSslContext: SSLContext = SSLContext.getInstance("TLSv1.3")
-
-    //网络变量
-    private lateinit var connectivityManager: ConnectivityManager
-    private lateinit var networkCallback: ConnectivityManager.NetworkCallback
-
-    //扫码结果回调
-    private val barcodeLauncher = registerForActivityResult(ScanContract()) { result ->
-        if (result.contents != null) {
-            Toast.makeText(this, "扫码成功", Toast.LENGTH_LONG).show()
-            LogUtils.log(Log.INFO, kTag, "拿到扫码结果id:${darkID}")
-            darkID = result.contents.toString()
-            // 保存darkID到内部存储
-            val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            with(prefs.edit()) {
-                putString(DARK_ID_KEY, darkID)
-                apply()
-            }
-
-            initWhenDarkIdIsReady()
-        } else {
-            Toast.makeText(this, "取消扫码", Toast.LENGTH_SHORT).show()
-        }
-    }
-
-    //darkID就绪时初始化
-    private fun initWhenDarkIdIsReady() {
-        if(darkID.isNotEmpty()){
-            //scan按钮设置
-            btnScan.setBackgroundColor(Color.GRAY)
-            btnScan.text = "已导入"
-            btnScan.isEnabled = false
-            //Connect按钮设置
-            btnConnect.setBackgroundColor(lightBlue)
-            //mqtt变量获取
-            mqttServerUrl = "ssl://***REMOVED***:8883"
-            mqttClientId = liteID
-            mqttTopicCheckAppAlive = "/topic/$darkID/checkAppAlive"
-            mqttTopicCheckAppAliveResult = "/topic/$darkID/checkAppAliveResult"
-            mqttTopicDark = "/topic/$darkID/dark"
-            mqttTopicDarkResult = "/topic/$darkID/darkResult"
-            mqttTopicLastWill = "/topic/$darkID/LastWill"
-        }
-    }
-
+    @SuppressLint("SetTextI18n")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        //背景图延伸到全屏
-        window.decorView.systemUiVisibility =
-            View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or View.SYSTEM_UI_FLAG_LAYOUT_STABLE
-        window.statusBarColor = Color.TRANSPARENT
-
+        // 获取ID，以便后续验证证书
+        liteID = BaseApplication.get(this).liteID
 
         // 初始化 LogUtils
         LogUtils.initialize(this)
-        LogUtils.log(Log.INFO, kTag, "应用启动成功")
+        LogUtils.log(Log.INFO, kTag, "应用启动成功，ID:$liteID")
 
         // 绑定视图
         btnScan = findViewById(R.id.btn_scan)
         btnConnect = findViewById(R.id.btn_connect)
         tvTimeout = findViewById(R.id.tv_timeout)
-
+        tvId= findViewById(R.id.tv_id)
         btnCheckOnline = findViewById(R.id.btn_check_online)
         btnDark = findViewById(R.id.btn_dark)
         tvCheckResult = findViewById(R.id.tv_check_result)
         tvDarkResult = findViewById(R.id.tv_punch_result)
         tvOfflineReport = findViewById(R.id.tv_offline_report)
+
+        //验证证书
+        certViewModel.initState.observe(this) { state ->
+            when (state) {
+                is InitState.Success -> {
+                    tvId.text = "本机ID：$liteID"
+                    tvTimeout.text = state.remaining
+                }
+                is InitState.Failed -> {
+                    showErrorDialog(state.reason)
+                }
+            }
+        }
+
+        //获取darkID
+        val prefs = getSharedPreferences("MyPrefs", Context.MODE_PRIVATE)
+        val savedDarkID = prefs.getString("darkID", null)
+
+        if (savedDarkID != null) {
+            // 如果已经保存了darkID，则直接使用
+            darkID = savedDarkID
+            LogUtils.log(Log.INFO, kTag, "从存储中获取到darkID:$darkID")
+
+            mqttHelper = MqttHelper(this, mqttViewModel, liteID, darkID)
+            mqttViewModel.setState(UiState.Scanned,"获取darkID:$darkID")
+        }
+
+        //根据mqtt更新UI
+        mqttViewModel.uiState.observe(this) { state  ->
+            updateUiForState(state)
+        }
+        mqttViewModel.reason.observe(this) { reason  ->
+            if (reason.isNotEmpty())
+                Toast.makeText(this, reason, Toast.LENGTH_SHORT).show()
+        }
+        mqttViewModel.checkResult.observe(this) { result ->
+            tvCheckResult.text = result
+        }
+        mqttViewModel.punchResult.observe(this) { result ->
+            tvDarkResult.text = result
+        }
+        mqttViewModel.offlineResult.observe(this) { result ->
+            tvOfflineReport.text = result
+        }
+        //取消倒计时
+        mqttViewModel.checkResponseReceived.observe(this) { received ->
+            if (received == true) {
+                onlineCheckTimeoutHandler?.removeCallbacks(onlineCheckTimeoutRunnable!!)
+            }
+        }
+        mqttViewModel.darkResponseReceived.observe(this) { received ->
+            if (received == true) {
+                darkCheckTimeoutHandler?.removeCallbacks(darkCheckTimeoutRunnable!!)
+            }
+        }
 
         // 设置扫码按钮
         btnScan.setOnClickListener {
@@ -176,10 +146,10 @@ class MainActivity : AppCompatActivity() {
 
         // 设置连接按钮
         btnConnect.setOnClickListener {
-            if (btnIsConnected) {
+            if (btnConnect.text == "断开连接") {
                 // 断开连接逻辑
-                disConnectToMqtt()
-            } else {
+                mqttHelper.disConnectToMqtt()
+            } else  {
                 // 判断ID是否存在
                 if (darkID.isEmpty()) {
                     AlertDialog.Builder(this)
@@ -188,14 +158,16 @@ class MainActivity : AppCompatActivity() {
                         .setPositiveButton("确定", null)
                         .show()
                     return@setOnClickListener  // 中断后续操作
+                }else {
+                    mqttHelper.connectToMqtt()
                 }
-                connectToMqtt()
+
             }
         }
 
         //检查按钮
         btnCheckOnline.setOnClickListener {
-            if(!btnIsConnected){
+            if(btnConnect.text == "连接"){
                 AlertDialog.Builder(this)
                     .setTitle("提示")
                     .setMessage("请先连接")
@@ -203,29 +175,26 @@ class MainActivity : AppCompatActivity() {
                     .show()
                 return@setOnClickListener  // 中断后续操作
             }
+            // 更新UI
+            mqttViewModel.setState(UiState.Checking,"开始检查是否在线，8s内返回结果")
 
-            // 禁用按钮并置灰
-            btnCheckOnline.isEnabled = false
-            btnCheckOnline.setBackgroundColor(Color.GRAY)
-            btnCheckOnline.text = "正在检查在线状态..."
-
-            publishMessage(mqttTopicCheckAppAlive, "isAlive?", 2)
-
-            // 设置 10 秒倒计时
+            mqttHelper.publishMessage(mqttHelper.mqttTopicCheckAppAlive, "isAlive?", 2)
+            // 设置 8 秒倒计时
             onlineCheckTimeoutHandler = Handler(Looper.getMainLooper())
             onlineCheckTimeoutRunnable = Runnable {
                 tvCheckResult.text = "不在线或网络缓慢，请稍后重试"
-                btnCheckOnline.text = "检查是否在线"
-                btnCheckOnline.isEnabled = true
-                btnCheckOnline.setBackgroundColor(lightBlue)
+                if(btnConnect.text == "连接"){
+                    mqttViewModel.setState(UiState.Scanned,"不在线或网络缓慢")
+                }else if(btnConnect.text == "断开连接"){
+                    mqttViewModel.setState(UiState.Connected,"不在线或网络缓慢")
+                }
             }
-
             onlineCheckTimeoutHandler?.postDelayed(onlineCheckTimeoutRunnable!!, 8000)
         }
 
         //设置打卡按钮
         btnDark.setOnClickListener {
-            if(!btnIsConnected){
+            if(btnConnect.text == "连接"){
                 AlertDialog.Builder(this)
                     .setTitle("提示")
                     .setMessage("请先连接")
@@ -233,653 +202,201 @@ class MainActivity : AppCompatActivity() {
                     .show()
                 return@setOnClickListener  // 中断后续操作
             }
+            // 更新UI
+            mqttViewModel.setState(UiState.Daring,"正在打卡，20s内返回结果")
 
-            // 禁用按钮并置灰
-            btnDark.isEnabled = false
-            btnDark.setBackgroundColor(Color.GRAY)
-            btnDark.text = "正在打卡..."
-
-            publishMessage(mqttTopicDark,"dark", 2)//保证送达
-
-            // 设置 60 秒倒计时
+            mqttHelper.publishMessage(mqttHelper.mqttTopicDark,"dark", 2)//保证送达
+            // 设置 20 秒倒计时
             darkCheckTimeoutHandler = Handler(Looper.getMainLooper())
             darkCheckTimeoutRunnable = Runnable {
                 tvDarkResult.text = "打卡失败或网络缓慢，请稍后重试"
-                btnDark.text = "打卡"
-                btnDark.isEnabled = true
-                btnDark.setBackgroundColor(lightBlue)
-            }
-
-            darkCheckTimeoutHandler?.postDelayed(darkCheckTimeoutRunnable!!, 60000)
-        }
-
-        // 获取设备的 Android ID，对于控制设备来说仅用来登录
-        liteID = getUUID()
-        user = liteID
-        pwd = liteID
-        LogUtils.log(Log.INFO, kTag, "控制设备唯一ID：$liteID")
-        LogUtils.log(Log.INFO, kTag, "加载 MQTT 配置文件")
-
-        //将darkID保存
-        val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        val savedDarkID = prefs.getString(DARK_ID_KEY, null)
-
-        if (savedDarkID != null) {
-            // 如果已经保存了darkID，则直接使用
-            darkID = savedDarkID
-            LogUtils.log(Log.INFO, kTag, "从存储中获取到darkID:$darkID")
-            initWhenDarkIdIsReady()
-        }
-
-        // 初始化网络相关配置
-        connectivityManager = getSystemService(CONNECTIVITY_SERVICE) as ConnectivityManager
-        networkCallback = object : ConnectivityManager.NetworkCallback() {
-            override fun onAvailable(network: Network) {
-                LogUtils.log(Log.INFO, kTag, "网络连接可用")
-            }
-
-            override fun onLost(network: Network) {
-                // 网络丢失时可以选择执行其他操作
-                Toast.makeText(this@MainActivity, "网络异常", Toast.LENGTH_LONG).show()
-            }
-        }
-        // 注册网络回调
-        connectivityManager.registerDefaultNetworkCallback(networkCallback)
-
-        //判断证书是否存在，因为涉及文件下载，安卓强制非阻塞
-        lifecycleScope.launch(Dispatchers.IO) {
-            val result = getAndCheckCA(this@MainActivity, liteID)
-            if (result != "CASuccess") {
-                // 回到主线程再弹窗
-                launch(Dispatchers.Main) {
-                    deleteCA(this@MainActivity, liteID)
-                    showRetryDialog(result,this@MainActivity, liteID)
+                if(btnConnect.text == "连接"){
+                    mqttViewModel.setState(UiState.Scanned,"打卡失败或网络缓慢")
+                }else if (btnConnect.text == "断开连接"){
+                    mqttViewModel.setState(UiState.Connected,"打卡失败或网络缓慢")
                 }
             }
+            darkCheckTimeoutHandler?.postDelayed(darkCheckTimeoutRunnable!!, 20000)
         }
     }
 
-    private fun showRetryDialog(result:String,context: Context, id: String) {
-        var title = ""
-        var message = ""
-        when (result) {
-            "CAisRevoked" -> {
-                title = "证书已被吊销"
-                message = "验证失败，请将页面截图发送给开发者后重试\n"
+    //扫码结果回调
+    private val barcodeLauncher = registerForActivityResult(ScanContract()) { result ->
+        if (result.contents != null) {
+            darkID = result.contents.toString()
+            LogUtils.log(Log.INFO, kTag, "拿到扫码结果id:$darkID")
+            // 保存darkID到内部存储
+            val prefs = getSharedPreferences("MyPrefs", Context.MODE_PRIVATE)
+            with(prefs.edit()) {
+                putString("darkID", darkID)
+                apply()
             }
-            "CAGetFailed" -> {
-                title = "证书文件下载失败"
-                message = "请将页面截图发送给开发者后重试\n"
-            }
-            "CAisTimeout" -> {
-                title = "证书已过期"
-                message = "请联系开发者购买时长\n"
-            }
-        }
-        AlertDialog.Builder(context)
-            .setTitle(title)
-            .setMessage(message + "ID：$id")
-            .setPositiveButton("重试") { _, _ ->
-                lifecycleScope.launch(Dispatchers.IO) {
-                    val result2 = getAndCheckCA(context, id)
-                    if (result2 != "CASuccess") {
-                        // 回到主线程再弹窗
-                        launch(Dispatchers.Main) {
-                            deleteCA(context, id)
-                            showRetryDialog(result2,context, id)
-                        }
-                    }
-                }
-            }
-            .setCancelable(false) // 如果需要设置为不可取消
-            .show()
-    }
+            mqttHelper = MqttHelper(this, mqttViewModel, liteID, darkID)
+            mqttViewModel.setState(UiState.Scanned,"扫码成功，获取darkID:$darkID")
 
-    //删除ca文件
-    private fun deleteCA(context: Context, ID: String) {
-        val clientEnPath = File(context.filesDir, "$ID.en")
-        val caEnPath = File(context.filesDir, "ca.en")
-
-        if (clientEnPath.exists()) {
-            val deleted = clientEnPath.delete()
-            if (deleted) {
-                LogUtils.log(Log.DEBUG, kTag, "客户端证书删除成功")
-            } else {
-                LogUtils.log(Log.WARN, kTag, "客户端证书删除失败")
-            }
-        }
-
-        if (caEnPath.exists()) {
-            val deleted = caEnPath.delete()
-            if (deleted) {
-                LogUtils.log(Log.DEBUG, kTag, "CA证书删除成功")
-            } else {
-                LogUtils.log(Log.WARN, kTag, "CA证书删除失败")
-            }
-        }
-    }
-
-    //证书初始化流程
-    private fun getAndCheckCA(context: Context, id: String): String {
-        val clientEnPath = File(context.filesDir, "$id.en")
-        val caEnPath = File(context.filesDir, "ca.en")
-
-        val baseUrl = "https://***REMOVED***/certs/${id}/en_${id}"
-        val clientEnUrl = "$baseUrl/${id}.en"
-        val caEnUrl = "$baseUrl/ca.en"
-
-        if (!clientEnPath.exists()) {
-            downloadFileSuspend(clientEnUrl, clientEnPath)
         } else {
-            LogUtils.log(Log.DEBUG, kTag, "客户端证书已存在")
+            mqttViewModel.setState(UiState.Idle,"取消扫码")
         }
-
-        if (!caEnPath.exists()) {
-            downloadFileSuspend(caEnUrl, caEnPath)
-        }else {
-            LogUtils.log(Log.DEBUG, kTag, "CA证书已存在")
-        }
-
-        if (!clientEnPath.exists() || !caEnPath.exists()) {
-            LogUtils.log(Log.ERROR, kTag, "证书文件下载失败")
-            return "CAGetFailed"
-        }
-
-        val key = generateKeyFromString(liteID)
-        if (key.isEmpty()) {
-            LogUtils.log(Log.ERROR, kTag, "密钥生成失败")
-            // 处理解密失败的情况，比如返回或终止操作
-            return "CAGetFailed"
-        }
-
-        val p12Bytes = FileInputStream(clientEnPath).use { inputStream ->
-            aesDecryptInMemory(inputStream, key)
-        }
-        if (p12Bytes.isEmpty()) {
-            LogUtils.log(Log.ERROR, kTag, "解密证书文件失败")
-            // 处理解密失败的情况，比如返回或终止操作
-            Toast.makeText(this@MainActivity, "解密证书文件失败", Toast.LENGTH_LONG).show()
-            return "CAGetFailed"
-        }
-        val caBytes = FileInputStream(caEnPath).use { inputStream ->
-            aesDecryptInMemory(inputStream, key)
-        }
-        if (caBytes.isEmpty()) {
-            LogUtils.log(Log.ERROR, kTag, "解密 CA 文件失败")
-            // 处理解密失败的情况，比如返回或终止操作
-            Toast.makeText(this@MainActivity, "解密 CA 文件失败", Toast.LENGTH_LONG).show()
-            return "CAGetFailed"
-        }
-
-        // 加载 .p12 文件
-        val p12P = liteID.toCharArray()
-        val keyStore = KeyStore.getInstance("PKCS12")
-        val p12InputStream = p12Bytes.inputStream()
-        try {
-            keyStore.load(p12InputStream, p12P)
-            LogUtils.log(Log.INFO,kTag, "P12 证书加载成功")
-
-            // 吊销验证
-            val alias = keyStore.aliases().nextElement() // 获取 p12 中的第一个别名
-            val clientCert = keyStore.getCertificate(alias) as X509Certificate
-
-            val crlUrl = URL("https://***REMOVED***/crl/crl.pem")
-            val crlStream = crlUrl.openStream()
-            val cf = CertificateFactory.getInstance("X.509")
-            val crl = cf.generateCRL(crlStream) as X509CRL
-
-            if (crl.isRevoked(clientCert)) {
-                LogUtils.log(Log.ERROR, kTag, "客户端证书已被吊销")
-                Toast.makeText(this@MainActivity, "证书已被吊销，禁止连接", Toast.LENGTH_LONG).show()
-                return "CAisRevoked"
-            } else {
-                LogUtils.log(Log.INFO, kTag, "客户端证书有效，未被吊销")
-
-                // 计算剩余天数
-                val now = Date()
-                val notAfter = clientCert.notAfter
-                val diffInMillies = notAfter.time - now.time
-                if (diffInMillies <= 0) {
-                    // 证书已过期
-                    days = 0
-                    hours = 0
-                    LogUtils.log(Log.WARN,kTag, "证书已过期")
-                    return "CAisTimeout"
-                } else {
-                    days = TimeUnit.MILLISECONDS.toDays(diffInMillies)
-                    hours = TimeUnit.MILLISECONDS.toHours(diffInMillies) % 24
-
-                    val times = "剩余时长:"+days+"天"+hours+"小时"
-                    runOnUiThread {
-                        tvTimeout.text = times
-                    }
-                }
-
-                LogUtils.log(Log.WARN,kTag, "证书剩余时间：$days 天 $hours 小时")
-            }
-        } catch (e: Exception) {
-            LogUtils.log(Log.ERROR,kTag, "P12 证书加载失败: ${e.message}")
-            return "CAisRevoked"
-        }
-
-        // 创建 KeyManagerFactory 来管理客户端证书和私钥
-        val keyManagerFactory = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm())
-        keyManagerFactory.init(keyStore, p12P)
-
-        // 加载 CA 根证书
-        val caInputStream = caBytes.inputStream()
-        val certificateFactory = CertificateFactory.getInstance("X.509")
-        val caCertificate = certificateFactory.generateCertificate(caInputStream)
-
-        // 创建一个包含 CA 证书的 KeyStore
-        val caKeyStore = KeyStore.getInstance(KeyStore.getDefaultType())
-        caKeyStore.load(null, null)
-        caKeyStore.setCertificateEntry("ca", caCertificate)
-
-        // 初始化 TrustManagerFactory
-        val trustManagerFactory = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm())
-        trustManagerFactory.init(caKeyStore)
-        //trustManagerFactory.init(null as KeyStore?)  // 默认使用系统信任的证书.不使用系统默认证书，保证内网通信
-
-        // SSLContext 设置
-        try {
-            mqttSslContext.init(keyManagerFactory.keyManagers, trustManagerFactory.trustManagers, null)
-            LogUtils.log(Log.DEBUG,kTag, "mqttSslContext 初始化成功")
-        } catch (e: Exception) {
-            LogUtils.log(Log.ERROR,kTag, "mqttSslContext 初始化失败: ${e.message}")
-            return "CAGetFailed"
-        }
-
-        return "CASuccess"
-    }
-
-    private fun downloadFileSuspend(urlStr: String, destFile: File){
-        try {
-            val url = URL(urlStr)
-            val connection = url.openConnection() as HttpURLConnection
-            connection.connectTimeout = 5000
-            connection.readTimeout = 5000
-            connection.requestMethod = "GET"
-            connection.doInput = true
-
-            if (connection.responseCode == HttpURLConnection.HTTP_OK) {
-                val input = connection.inputStream
-                val output = FileOutputStream(destFile)
-                input.copyTo(output)
-                output.close()
-                input.close()
-                LogUtils.log(Log.DEBUG,kTag, "下载成功：${destFile.name}")
-            } else {
-                LogUtils.log(Log.ERROR,kTag, "下载失败：$urlStr，code=${connection.responseCode}")
-            }
-
-            connection.disconnect()
-        } catch (e: Exception) {
-            LogUtils.log(Log.ERROR,kTag, "异常下载 $urlStr: ${e.message}")
-        }
-    }
-
-    private fun disConnectToMqtt(){
-        LogUtils.log(Log.DEBUG,kTag, "尝试断开 MQTT 代理")
-        try {
-            if (mqttClient.isConnected) {
-                mqttClient.disconnect()
-                LogUtils.log(Log.DEBUG,kTag, "连接已成功断开")
-
-                //修改UI
-                btnConnect.setBackgroundColor(lightBlue)
-                btnConnect.text = "连接"
-                btnCheckOnline.setBackgroundColor(Color.GRAY)  // 假设断开时按钮颜色设置为灰色
-                btnDark.setBackgroundColor(Color.GRAY)  // 断开时，设置按钮颜色为灰色
-                btnIsConnected = false
-            }
-        } catch (e: MqttException) {
-            // 异常处理，捕获 MQTT 客户端断开连接时可能发生的错误
-            LogUtils.log(Log.ERROR,kTag, "断开连接时出错: ${e.message}")
-            runOnUiThread {
-                Toast.makeText(this@MainActivity, "断开连接时出错: ${e.message}", Toast.LENGTH_SHORT).show()
-            }
-        } catch (e: Exception) {
-            // 捕获其他异常
-            LogUtils.log(Log.ERROR,kTag, "发生未知错误: ${e.message}")
-            e.printStackTrace()  // 输出堆栈跟踪信息
-            runOnUiThread {
-                Toast.makeText(this@MainActivity, "发生未知错误: ${e.message}", Toast.LENGTH_SHORT).show()
-            }
-        }
-    }
-
-    private fun connectToMqtt() {
-        LogUtils.log(Log.DEBUG,kTag, "尝试连接到 MQTT 代理")
-
-        // 确保网络连接
-        if (!NetworkUtils.isNetworkAvailable(this)) {
-            LogUtils.log(Log.ERROR,kTag, "网络不可用，无法连接到 MQTT 代理")
-            Toast.makeText(this@MainActivity, "网络异常", Toast.LENGTH_LONG).show()
-            return
-        }
-
-        mqttClient = MqttAndroidClient(applicationContext, mqttServerUrl, mqttClientId, Ack.AUTO_ACK)
-        val options = MqttConnectOptions().apply {
-            isCleanSession = true
-            connectionTimeout = 10
-            keepAliveInterval = 30
-            userName = user
-            password = pwd.toCharArray()
-
-            socketFactory = mqttSslContext.socketFactory
-        }
-        options.isAutomaticReconnect = true
-
-        try {
-            mqttClient.connect(options, null, object : IMqttActionListener {
-                override fun onSuccess(asyncActionToken: IMqttToken?) {
-                    LogUtils.log(Log.DEBUG,kTag, "$mqttServerUrl 连接成功")
-
-                    // 连接成功后设置按钮状态
-                    runOnUiThread {
-                        btnConnect.setBackgroundColor(lightGreen)
-                        btnConnect.text = "已连接"
-                        btnConnect.isEnabled = true  // 可以再次点击断开连接
-                        btnCheckOnline.setBackgroundColor(lightBlue)
-                        btnDark.setBackgroundColor(lightBlue)
-                        btnIsConnected = true
-                    }
-
-                    val topicsToSubscribe = arrayOf(mqttTopicDarkResult,mqttTopicCheckAppAliveResult,mqttTopicLastWill)
-                    val qosLevels = intArrayOf(2,2,2) // QoS 级别
-                    subscribeToTopics(topicsToSubscribe, qosLevels) // 连接成功后订阅主题
-                }
-
-                override fun onFailure(asyncActionToken: IMqttToken?, exception: Throwable?) {
-                    if (exception is MqttException) {
-                        // 打印 MqttException 的详细信息
-                        LogUtils.log(Log.ERROR, kTag, "MQTT 通信失败: ${exception.message}")
-                        LogUtils.log(Log.ERROR, kTag, "MqttException 错误码: ${exception.reasonCode}")
-                        LogUtils.log(Log.ERROR, kTag, "MqttException 错误详细信息: ${exception.localizedMessage}")
-
-                        // 打印堆栈跟踪，帮助进一步排查
-                        exception.printStackTrace()
-                    } else {
-                        // 其他异常类型
-                        LogUtils.log(Log.ERROR, kTag, "未知错误: ${exception?.message}")
-                    }
-                    Toast.makeText(this@MainActivity, "通信失败", Toast.LENGTH_LONG).show()
-                    btnConnect.setBackgroundColor(lightBlue)
-                    btnConnect.text = "连接"
-                    btnCheckOnline.setBackgroundColor(Color.GRAY)  // 假设断开时按钮颜色设置为灰色
-                    btnDark.setBackgroundColor(Color.GRAY)  // 断开时，设置按钮颜色为灰色
-                    btnIsConnected = false
-                }
-            })
-        } catch (e: MqttException) {
-            LogUtils.log(Log.ERROR,kTag, "MQTT 连接异常: ${e.message}")
-        }
-
-        mqttClient.setCallback(object : MqttCallbackExtended {
-            override fun connectionLost(cause: Throwable?) {
-                if (cause != null) {
-                    LogUtils.log(Log.ERROR, kTag, "MQTT 连接断开：${cause.message}")
-                    val stackTrace = StringWriter().also { writer ->
-                        cause.printStackTrace(PrintWriter(writer))
-                    }.toString()
-                    LogUtils.log(Log.ERROR, kTag, "堆栈信息：\n$stackTrace")
-                }
-                btnConnect.setBackgroundColor(lightBlue)
-                btnConnect.text = "连接"
-                btnCheckOnline.setBackgroundColor(Color.GRAY)  // 假设断开时按钮颜色设置为灰色
-                btnDark.setBackgroundColor(Color.GRAY)  // 断开时，设置按钮颜色为灰色
-                btnIsConnected = false
-            }
-
-            override fun connectComplete(reconnect: Boolean, serverURI: String?) {
-                btnIsConnected = true
-                if (reconnect) {
-                    LogUtils.log(Log.INFO, kTag, "重连成功")
-                } else {
-                    LogUtils.log(Log.INFO, kTag, "初次连接成功")
-                    return
-                }
-                val topicsToSubscribe = arrayOf(mqttTopicCheckAppAliveResult,mqttTopicDarkResult,mqttTopicLastWill)
-                val qosLevels = intArrayOf(2,2,2) // QoS 级别
-                subscribeToTopics(topicsToSubscribe, qosLevels) // 连接成功后订阅主题
-            }
-
-            override fun messageArrived(topic: String?, message: MqttMessage?) {
-                message?.let {
-                    val msg = String(it.payload) // 将消息体转换为字符串
-                    LogUtils.log(Log.DEBUG,kTag, "收到主题 $topic 的消息: $msg")
-
-                    when (topic) {
-                        mqttTopicCheckAppAliveResult -> {
-                            onlineCheckTimeoutHandler?.removeCallbacks(onlineCheckTimeoutRunnable!!)
-                            runOnUiThread {
-                                btnCheckOnline.text = "在线中！"
-                                btnCheckOnline.setBackgroundColor(lightGreen)
-                                tvCheckResult.text = msg
-                                Handler(Looper.getMainLooper()).postDelayed({
-                                    // 延时后的逻辑
-                                    btnCheckOnline.setBackgroundColor(lightBlue)
-                                    btnCheckOnline.text = "检查是否在线"
-                                    btnCheckOnline.isEnabled = true
-                                }, 1000)
-
-
-
-                            }
-                        }
-                        mqttTopicDarkResult -> {
-                            darkCheckTimeoutHandler?.removeCallbacks(darkCheckTimeoutRunnable!!)
-                            runOnUiThread {
-                                //成功
-                                if(msg.contains("极速打卡") && msg.contains("成功")){
-                                    btnDark.text = "打卡成功！"
-                                    btnDark.setBackgroundColor(lightGreen)
-                                    tvDarkResult.text = msg
-                                    Handler(Looper.getMainLooper()).postDelayed({
-                                        // 延时后的逻辑
-                                        btnDark.setBackgroundColor(lightBlue)
-                                        btnDark.text = "打卡"
-                                        btnDark.isEnabled = true
-                                    }, 1000)
-                                }else if(msg.contains("未监听到打卡成功的通知")){
-                                    //打卡失败
-                                    btnDark.setBackgroundColor(lightBlue)
-                                    tvDarkResult.text = msg
-                                    btnDark.text = "打卡"
-                                    btnDark.isEnabled = true
-                                }
-
-                            }
-                        }
-                        mqttTopicLastWill -> {
-                            runOnUiThread {
-                                tvOfflineReport.text = ""
-                                Handler(Looper.getMainLooper()).postDelayed({
-                                    tvOfflineReport.text = msg
-                                }, 1000)
-
-                            }
-                        }
-                    }
-                }
-            }
-
-            override fun deliveryComplete(token: IMqttDeliveryToken?) {
-                LogUtils.log(Log.DEBUG,kTag, "消息发送成功：${token?.message?.toString()}")
-            }
-        })
-    }
-
-    //mqtt订阅
-    private fun subscribeToTopics(topics: Array<String>, qos: IntArray) {
-        try {
-            mqttClient.subscribe(topics, qos, null, object : IMqttActionListener {
-                override fun onSuccess(asyncActionToken: IMqttToken?) {
-                    LogUtils.log(Log.DEBUG, kTag,"成功订阅主题: ${topics.joinToString(", ")}")
-                }
-
-                override fun onFailure(asyncActionToken: IMqttToken?, exception: Throwable?) {
-                    LogUtils.log(Log.ERROR, kTag,"订阅失败: ${exception?.message}")
-                }
-            })
-        } catch (e: MqttException) {
-            LogUtils.log(Log.ERROR, kTag,"订阅异常: ${e.message}")
-            val stackTrace = StringWriter().also { writer ->
-                e.printStackTrace(PrintWriter(writer))
-            }.toString()
-            LogUtils.log(Log.ERROR, kTag, "堆栈信息：\n$stackTrace")
-        }
-    }
-
-    //mqtt解除订阅
-    private fun unsubscribeFromTopics(topics: Array<String>) {
-        try {
-            LogUtils.log(Log.DEBUG,kTag, "尝试解除订阅主题: ${topics.joinToString(", ")}")
-            mqttClient.unsubscribe(topics, null, object : IMqttActionListener {
-                override fun onSuccess(asyncActionToken: IMqttToken?) {
-                    LogUtils.log(Log.DEBUG,kTag, "成功解除订阅主题: ${topics.joinToString(", ")}")
-                }
-
-                override fun onFailure(asyncActionToken: IMqttToken?, exception: Throwable?) {
-                    LogUtils.log(Log.ERROR,kTag,  "解除订阅失败: ${exception?.message}")
-                }
-            })
-        } catch (e: MqttException) {
-            LogUtils.log(Log.ERROR,kTag,  "解除订阅异常: ${e.message}")
-            val stackTrace = StringWriter().also { writer ->
-                e.printStackTrace(PrintWriter(writer))
-            }.toString()
-            LogUtils.log(Log.ERROR, kTag, "堆栈信息：\n$stackTrace")
-        }
-    }
-
-
-    //mqtt 发布
-    private fun publishMessage(topic: String, message: String, qos: Int) {
-        LogUtils.log(Log.DEBUG,kTag, "尝试发布消息到主题 $topic: $message")
-
-        try {
-            val mqttMessage = MqttMessage(message.toByteArray()).apply {
-                this.qos = qos // 设置质量服务级别
-            }
-            mqttClient.publish(topic, mqttMessage, null, null)
-        } catch (e: MqttException) {
-            LogUtils.log(Log.ERROR,kTag, "消息发布失败: ${e.message}")
-        }
-        Toast.makeText(this@MainActivity, "请求消息成功", Toast.LENGTH_LONG).show()
-    }
-
-    // 计算字符串的SHA-256哈希
-    private fun hashString(input: String): ByteArray {
-        val sha256 = MessageDigest.getInstance("SHA-256")
-        return sha256.digest(input.toByteArray(Charsets.UTF_8))
-    }
-
-    private fun generateKeyFromString(inputString: String): ByteArray {
-        return try {
-            // 计算字符串的哈希值
-            val stringHash = hashString(inputString)
-
-            // 将哈希值每个字节加1，并将结果转换为 ByteArray
-            val transformedHash = stringHash.map {
-                ((it.toInt() + 1) % 256).toByte()
-            }.toByteArray()
-
-            // 使用前16字节
-            transformedHash.take(16).toByteArray()
-
-        } catch (e: Exception) {
-            // 捕获任何异常并记录日志
-            LogUtils.log(Log.ERROR, kTag, "生成密钥时发生异常: ${e.message}")
-            ByteArray(0)  // 返回空字节数组表示生成密钥失败
-        }
-    }
-
-    // 解密文件并在内存中处理（不保存到文件）
-    private fun aesDecryptInMemory(inputStream: InputStream, key: ByteArray): ByteArray {
-        try {
-            // 读取加密文件，获取IV（前16字节）
-            val iv = ByteArray(16) // AES的IV长度是16字节
-            val bytesRead = inputStream.read(iv) // 读取IV
-            if (bytesRead != 16) {
-                LogUtils.log(Log.ERROR, kTag, "IV长度不正确，解密失败")
-                return ByteArray(0)  // 返回空字节数组
-            }
-
-            // 使用AES解密
-            val cipher = Cipher.getInstance("AES/CBC/PKCS5Padding")
-            val ivSpec = IvParameterSpec(iv)
-            val secretKey = SecretKeySpec(key, "AES")
-            cipher.init(Cipher.DECRYPT_MODE, secretKey, ivSpec)
-
-            CipherInputStream(inputStream, cipher).use { cipherInputStream ->
-                ByteArrayOutputStream().use { outputStream ->
-                    val buffer = ByteArray(4096)
-                    var bytesReadInLoop: Int
-                    while (cipherInputStream.read(buffer).also { bytesReadInLoop = it } != -1) {
-                        outputStream.write(buffer, 0, bytesReadInLoop)
-                    }
-                    return outputStream.toByteArray()
-                }
-            }
-
-        } catch (e: Exception) {
-            LogUtils.log(Log.ERROR, kTag, "解密失败: ${e.message}")
-        }
-
-        // 出现任何错误时返回空字节数组
-        return ByteArray(0)
-    }
-
-    //获取设备唯一ID
-    @SuppressLint("HardwareIds")
-    private fun getUUID(): String {
-        return Settings.Secure.getString(this.contentResolver, Settings.Secure.ANDROID_ID)
     }
 
     override fun onDestroy() {
         super.onDestroy()
-        try {
-            // 取消订阅
-            if(btnIsConnected){
-                val topicsToSubscribe = arrayOf(mqttTopicCheckAppAliveResult,mqttTopicDarkResult,mqttTopicLastWill)
-                unsubscribeFromTopics(topicsToSubscribe)
-                //断开连接
-                mqttClient.disconnect()
+    }
+
+    private fun showErrorDialog(reason: String) {
+        android.app.AlertDialog.Builder(this)
+            .setTitle("初始化失败")
+            .setMessage(reason)
+            .setCancelable(false)
+            .setPositiveButton("重试") { _, _ ->
+                certViewModel.initCertificateCheck(liteID)
             }
-            // 注销网络回调
-            connectivityManager.unregisterNetworkCallback(networkCallback)
-        } catch (e: MqttException) {
-            e.printStackTrace()
+            .setNegativeButton("退出") { _, _ ->
+                finish()
+            }
+            .show()
+    }
+
+    //各个状态时UI组件显示
+    private val lightGreen = Color.parseColor("#90EE90")  // 浅绿色
+    private val lightBlue = Color.parseColor("#ADD8E6")  //浅蓝色
+    private fun updateUiForState(state: UiState) {
+        when (state) {
+            //未扫码
+            UiState.Idle -> {
+                setButtonState(
+                    scanEnabled = true,
+                    scanColor = lightBlue,
+                    scanText = "扫码",
+                    connectEnabled = false,
+                    connectColor = Color.GRAY,
+                    connectText = "连接",
+                    checkOnlineEnabled = false,
+                    checkOnlineColor = Color.GRAY,
+                    checkOnlineText = "检查是否在线",
+                    darkEnabled = false,
+                    darkColor = Color.GRAY,
+                    darkText = "打卡"
+                )
+            }
+
+            UiState.Scanned -> {
+                setButtonState(
+                    scanEnabled = true,
+                    scanColor = lightBlue,
+                    scanText = "重新扫码",
+                    connectEnabled = true,
+                    connectColor = lightBlue,
+                    connectText = "连接",
+                    checkOnlineEnabled = false,
+                    checkOnlineColor = Color.GRAY,
+                    checkOnlineText = "检查是否在线",
+                    darkEnabled = false,
+                    darkColor = Color.GRAY,
+                    darkText = "打卡"
+                )
+            }
+
+            UiState.Connected -> {
+                setButtonState(
+                    scanEnabled = true,
+                    scanColor = lightBlue,
+                    scanText = "重新扫码",
+                    connectEnabled = true,
+                    connectColor = lightGreen,
+                    connectText = "断开连接",
+                    checkOnlineEnabled = true,
+                    checkOnlineColor = lightBlue,
+                    checkOnlineText = "检查是否在线",
+                    darkEnabled = true,
+                    darkColor = lightBlue,
+                    darkText = "打卡"
+                )
+            }
+
+            UiState.Checking -> {
+                setButtonState(
+                    scanEnabled = true,
+                    scanColor = lightBlue,
+                    scanText = "重新扫码",
+                    connectEnabled = true,
+                    connectColor = lightGreen,
+                    connectText = "断开连接",
+                    checkOnlineEnabled = false,
+                    checkOnlineColor = Color.GRAY,
+                    checkOnlineText = "正在检查是否在线",
+                    darkEnabled = false,
+                    darkColor = Color.GRAY,
+                    darkText = "打卡",
+                    checkResult = ""
+                )
+            }
+
+            UiState.Daring -> {
+                setButtonState(
+                    scanEnabled = true,
+                    scanColor = lightBlue,
+                    scanText = "重新扫码",
+                    connectEnabled = true,
+                    connectColor = lightGreen,
+                    connectText = "断开连接",
+                    checkOnlineEnabled = false,
+                    checkOnlineColor = Color.GRAY,
+                    checkOnlineText = "检查是否在线",
+                    darkEnabled = false,
+                    darkColor = Color.GRAY,
+                    darkText = "正在打卡...",
+                    darkResult = ""
+                )
+            }
         }
     }
 
-    //两次以退出
-    @Deprecated("Deprecated in Java")
-    override fun onBackPressed() {
-        val currentTime = System.currentTimeMillis()
-        if (currentTime - lastBackPressTime > backPressInterval) {
-            Toast.makeText(this, "再按一次退出应用", Toast.LENGTH_SHORT).show()
-            lastBackPressTime = currentTime
-        } else {
-            super.onBackPressed() // 正常退出
+    private fun setButtonState(
+        scanEnabled: Boolean,
+        scanColor: Int,
+        scanText: String,
+        connectEnabled: Boolean,
+        connectColor: Int,
+        connectText: String,
+        checkOnlineEnabled: Boolean,
+        checkOnlineColor: Int,
+        checkOnlineText: String,
+        darkEnabled: Boolean,
+        darkColor: Int,
+        darkText: String,
+        checkResult: String? = null,
+        darkResult: String? = null
+    ) {
+        //扫码按钮
+        btnScan.isEnabled = scanEnabled
+        btnScan.setBackgroundColor(scanColor)
+        btnScan.text = scanText
+        //连接按钮
+        btnConnect.isEnabled = connectEnabled
+        btnConnect.setBackgroundColor(connectColor)
+        btnConnect.text = connectText
+        //检查按钮
+        btnCheckOnline.isEnabled = checkOnlineEnabled
+        btnCheckOnline.setBackgroundColor(checkOnlineColor)
+        btnCheckOnline.text = checkOnlineText
+        //打卡按钮
+        btnDark.isEnabled = darkEnabled
+        btnDark.setBackgroundColor(darkColor)
+        btnDark.text = darkText
+
+        checkResult?.let {
+            tvCheckResult.text = it
         }
+        darkResult?.let {
+            tvDarkResult.text = it
+        }
+
     }
 
-    //程序再次进入时要检测证书
-    override fun onRestart() {
-        super.onRestart()
-
-        lifecycleScope.launch(Dispatchers.IO) {
-            val result = getAndCheckCA(this@MainActivity, liteID)
-            if (result != "CASuccess") {
-                // 回到主线程再弹窗
-                launch(Dispatchers.Main) {
-                    deleteCA(this@MainActivity, liteID)
-                    showRetryDialog(result,this@MainActivity, liteID)
-                }
-            }
-        }
+    override fun onResume() {
+        super.onResume()
+        //证书检查
+        certViewModel.initCertificateCheck(liteID)
     }
 }

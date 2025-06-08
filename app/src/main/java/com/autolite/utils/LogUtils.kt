@@ -1,9 +1,7 @@
-package com.autolite
+package com.autolite.utils
 
 import android.content.Context
 import android.util.Log
-import android.widget.Toast
-import androidx.core.content.ContextCompat
 import java.io.File
 import java.io.FileWriter
 import java.io.IOException
@@ -47,12 +45,6 @@ object LogUtils {
             }
         } catch (e: IOException) {
             Log.e(LOG_TAG, "无法写入日志文件: ${e.message}")
-        }
-    }
-
-    fun String.otherShow(context: Context) {
-        ContextCompat.getMainExecutor(context).execute {
-            Toast.makeText(context, this, Toast.LENGTH_SHORT).show()
         }
     }
 
