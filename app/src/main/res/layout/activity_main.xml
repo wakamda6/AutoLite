@@ -72,10 +72,20 @@
 
             <!-- ID -->
             <TextView
-                android:id="@+id/tv_id"
+                android:id="@+id/tv_liteId"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:text="本机ID："
+                android:padding="5dp"
+                android:textSize="15sp"
+                android:textColor="#000000"
+                android:gravity="start"/>
+
+            <TextView
+                android:id="@+id/tv_darkId"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text=" DarkID：请先扫码"
                 android:padding="5dp"
                 android:textSize="15sp"
                 android:textColor="#000000"
@@ -86,7 +96,7 @@
                 android:id="@+id/tv_timeout"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="剩余时长：0天0小时"
+                android:text="  剩余时长：0天0小时"
                 android:textSize="15sp"
                 android:textColor="#000000"
                 android:gravity="start"/>

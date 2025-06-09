@@ -33,7 +33,7 @@ class MainActivity : AppCompatActivity() {
 
     //ID
     private var liteID:String = ""
-    private var darkID:String = ""
+    private var darkID:String = "请先扫码"
 
     //邮件发送间隔倒计时
     private var onlineCheckTimeoutHandler: Handler? = null
@@ -45,7 +45,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var btnScan: Button
     private lateinit var btnConnect: Button
     private lateinit var tvTimeout: TextView
-    private lateinit var tvId: TextView
+    private lateinit var tvLiteId: TextView
+    private lateinit var tvDarkId: TextView
     private lateinit var btnCheckOnline: Button
     private lateinit var btnDark: Button
     private lateinit var tvCheckResult: TextView
@@ -68,7 +69,8 @@ class MainActivity : AppCompatActivity() {
         btnScan = findViewById(R.id.btn_scan)
         btnConnect = findViewById(R.id.btn_connect)
         tvTimeout = findViewById(R.id.tv_timeout)
-        tvId= findViewById(R.id.tv_id)
+        tvLiteId= findViewById(R.id.tv_liteId)
+        tvDarkId= findViewById(R.id.tv_darkId)
         btnCheckOnline = findViewById(R.id.btn_check_online)
         btnDark = findViewById(R.id.btn_dark)
         tvCheckResult = findViewById(R.id.tv_check_result)
@@ -79,7 +81,8 @@ class MainActivity : AppCompatActivity() {
         certViewModel.initState.observe(this) { state ->
             when (state) {
                 is InitState.Success -> {
-                    tvId.text = "本机ID：$liteID"
+                    tvLiteId.text = "本机   ID：${liteID}"
+                    tvDarkId.text = "Dark  ID：${darkID}"
                     tvTimeout.text = state.remaining
                 }
                 is InitState.Failed -> {

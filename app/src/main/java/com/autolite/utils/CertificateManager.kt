@@ -298,7 +298,7 @@ object CertificateManager  {
 
         val days = TimeUnit.MILLISECONDS.toDays(diff)
         val hours = TimeUnit.MILLISECONDS.toHours(diff) % 24
-        return "剩余时长:${days}天${hours}小时"
+        return " 剩余时长:${days}天${hours}小时"
     }
 
 }
