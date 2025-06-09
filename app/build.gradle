@@ -49,16 +49,16 @@ android {
         variant.outputs.configureEach {
             def buildType = variant.buildType.name
             if (buildType == "release") {
-                outputFileName = "AutoLite" + getBuildDate() + "_" + defaultConfig.versionName + "_release.apk"
+                outputFileName = "AutoLite_" + getBuildDate() + "_v" + defaultConfig.versionName + "_release.apk"
             }else if (buildType == "debug") {
-                outputFileName = "AutoLite" + getBuildDate() + "_" + defaultConfig.versionName + "_debug.apk"
+                outputFileName = "AutoLite_" + getBuildDate() + "_v" + defaultConfig.versionName + "_debug.apk"
             }
         }
     }
 }
 
 static def getBuildDate() {
-    def dateFormat = new java.text.SimpleDateFormat("yyyyMMdd_HH_mm", Locale.CHINA)
+    def dateFormat = new SimpleDateFormat("yyyyMMddHHmm", Locale.CHINA)
     return dateFormat.format(new Date())
 }
 
