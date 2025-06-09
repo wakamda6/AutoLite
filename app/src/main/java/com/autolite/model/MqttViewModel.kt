@@ -19,7 +19,7 @@ class MqttViewModel : ViewModel() {
     private val _reason = MutableLiveData<String>()
     val reason: LiveData<String> = _reason
 
-    fun setState(state: UiState,reason:String) {
+    fun setState(state: UiState, reason:String) {
         _uiState.value = state
         _reason.value = reason
     }

@@ -115,7 +115,7 @@ object CertificateManager  {
     }
 
     //1. 获取证书：如果存在则直接校验，如果不存在则需要下载，下载三次，如果还不成功则返回下载失败
-    private suspend fun checkAndDownloadCerts(clientEnPath:File, caEnPath:File, clientEnUrl:String, caEnUrl:String):CertCheckResult {
+    private suspend fun checkAndDownloadCerts(clientEnPath:File, caEnPath:File, clientEnUrl:String, caEnUrl:String): CertCheckResult {
         val clientDownloaded = if (!clientEnPath.exists()) {
             downloadFile(clientEnUrl, clientEnPath)
         } else {
@@ -154,7 +154,7 @@ object CertificateManager  {
     }
 
     //3. 加载并验证证书：获取剩余时长并返回，失败则返回验证失败，等待后续添加吊销后重新下载一次的逻辑
-    private suspend fun checkCertRevoked(bytes: ByteArray, ID: String): CertCheckResult  {
+    private suspend fun checkCertRevoked(bytes: ByteArray, ID: String): CertCheckResult {
 
         val p12P = ID.toCharArray()
         val keyStore = KeyStore.getInstance("PKCS12")
@@ -181,7 +181,7 @@ object CertificateManager  {
             return CertCheckResult(CertCheckResult.Status.CASuccess, remaining)
 
         } catch (e: Exception) {
-            LogUtils.log(Log.WARN,kTag, "P12 证书加载失败: ${e.message}")
+            LogUtils.log(Log.WARN, kTag, "P12 证书加载失败: ${e.message}")
             e.printStackTrace()
             CertCheckResult(CertCheckResult.Status.CheckCertRevokedError)
         }

@@ -10,6 +10,8 @@ android {
     compileSdk 33
 
     defaultConfig {
+        //test
+//        applicationId "com.test.autolite"
         applicationId "com.autolite"
         minSdk 24
         targetSdk 33

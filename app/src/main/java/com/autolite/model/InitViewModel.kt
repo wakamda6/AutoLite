@@ -30,7 +30,12 @@ class InitViewModel(application: Application) : AndroidViewModel(application) {
                         CertCheckResult.Status.CASuccess -> {
                             val shouldRestartMqtt = SharedMqttState.hasCertCheckFailedOnce
                             SharedMqttState.hasCertCheckFailedOnce = false // 重置
-                            _initState.postValue(InitState.Success(result.message, shouldRestartMqtt)) // 传递剩余时长
+                            _initState.postValue(
+                                InitState.Success(
+                                    result.message,
+                                    shouldRestartMqtt
+                                )
+                            ) // 传递剩余时长
                         }
                         CertCheckResult.Status.CAGetFailed -> {
                             SharedMqttState.hasCertCheckFailedOnce = true

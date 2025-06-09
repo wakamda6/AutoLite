@@ -13,6 +13,7 @@ import android.widget.Toast
 import androidx.activity.viewModels
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import com.autolite.R
 import com.autolite.model.InitState
 import com.autolite.model.InitViewModel
 import com.autolite.model.MqttViewModel
