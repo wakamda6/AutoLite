@@ -73,9 +73,17 @@ class MqttHelper(
                 // 取消订阅
                 unsubscribeFromTopics(arrayOf(mqttTopicCheckAppAliveResult, mqttTopicDarkResult,mqttTopicLastWill))
                 //断开连接
-                mqttClient?.disconnect()
-                LogUtils.log(Log.DEBUG,kTag, "连接已成功断开")
-                viewModel.setState(UiState.Scanned,"")
+                mqttClient?.disconnect(null, object : IMqttActionListener {
+                    override fun onSuccess(asyncActionToken: IMqttToken?) {
+                        LogUtils.log(Log.DEBUG, kTag, "MQTT 断开成功")
+                        mqttClient?.unregisterResources()
+                        viewModel.setState(UiState.Scanned, "")
+                    }
+
+                    override fun onFailure(asyncActionToken: IMqttToken?, exception: Throwable?) {
+                        LogUtils.log(Log.ERROR, kTag, "断开连接失败: ${exception?.message}")
+                    }
+                })
             }
         } catch (e: MqttException) {
             // 异常处理，捕获 MQTT 客户端断开连接时可能发生的错误
@@ -92,7 +100,7 @@ class MqttHelper(
     }
 
     private fun initMqttClient() {
-        mqttClient = MqttAndroidClient(context, mqttServerUrl, mqttClientId, Ack.AUTO_ACK)
+        mqttClient = MqttAndroidClient(context.applicationContext, mqttServerUrl, mqttClientId, Ack.AUTO_ACK)
         mqttClient?.setCallback(mqttCallback)
     }
 

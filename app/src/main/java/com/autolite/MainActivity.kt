@@ -54,7 +54,7 @@ class MainActivity : AppCompatActivity() {
 
     private val certViewModel: InitViewModel by viewModels()
     private val mqttViewModel: MqttViewModel by viewModels()
-    private lateinit var mqttHelper: MqttHelper
+    lateinit var mqttHelper: MqttHelper
 
     @SuppressLint("SetTextI18n")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -62,11 +62,7 @@ class MainActivity : AppCompatActivity() {
         setContentView(R.layout.activity_main)
 
         // 获取ID，以便后续验证证书
-        liteID = BaseApplication.get(this).liteID
-
-        // 初始化 LogUtils
-        LogUtils.initialize(this)
-        LogUtils.log(Log.INFO, kTag, "应用启动成功，ID:$liteID")
+        liteID = BaseApplication.liteID
 
         // 绑定视图
         btnScan = findViewById(R.id.btn_scan)
@@ -240,10 +236,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    override fun onDestroy() {
-        super.onDestroy()
-    }
-
     private fun showErrorDialog(reason: String) {
         android.app.AlertDialog.Builder(this)
             .setTitle("初始化失败")
@@ -393,6 +385,10 @@ class MainActivity : AppCompatActivity() {
             tvDarkResult.text = it
         }
 
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
     }
 
     override fun onResume() {
