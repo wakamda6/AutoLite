@@ -42,7 +42,11 @@ class BaseApplication : Application() {
                     // 应用进入后台
                     LogUtils.log(Log.INFO, kTag, "App进入后台")
                     // 如果有 mqttHelper，可以在此断开连接
-                    (activity as? MainActivity)?.mqttHelper?.disConnectToMqtt()
+                    (activity as? MainActivity)?.let { mainActivity ->
+                        if (mainActivity.isMqttHelperInitialized()) {
+                            mainActivity.mqttHelper.disConnectToMqtt()
+                        }
+                    }
                 }
             }
 

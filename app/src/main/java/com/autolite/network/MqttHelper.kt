@@ -67,7 +67,6 @@ class MqttHelper(
     }
 
     fun disConnectToMqtt(){
-        LogUtils.log(Log.DEBUG,kTag, "尝试断开 MQTT 代理")
         try {
             if (isMqttConnected()) {
                 // 取消订阅

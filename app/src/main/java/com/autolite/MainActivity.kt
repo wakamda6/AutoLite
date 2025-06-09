@@ -56,6 +56,7 @@ class MainActivity : AppCompatActivity() {
     private val certViewModel: InitViewModel by viewModels()
     private val mqttViewModel: MqttViewModel by viewModels()
     lateinit var mqttHelper: MqttHelper
+    fun isMqttHelperInitialized(): Boolean = this::mqttHelper.isInitialized
 
     @SuppressLint("SetTextI18n")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -148,7 +149,9 @@ class MainActivity : AppCompatActivity() {
         btnConnect.setOnClickListener {
             if (btnConnect.text == "断开连接") {
                 // 断开连接逻辑
-                mqttHelper.disConnectToMqtt()
+                if (isMqttHelperInitialized()) {
+                    mqttHelper.disConnectToMqtt()
+                }
             } else  {
                 // 判断ID是否存在
                 if (darkID.isEmpty()) {
@@ -159,7 +162,9 @@ class MainActivity : AppCompatActivity() {
                         .show()
                     return@setOnClickListener  // 中断后续操作
                 }else {
-                    mqttHelper.connectToMqtt()
+                    if (isMqttHelperInitialized()) {
+                        mqttHelper.connectToMqtt()
+                    }
                 }
 
             }
@@ -178,7 +183,8 @@ class MainActivity : AppCompatActivity() {
             // 更新UI
             mqttViewModel.setState(UiState.Checking,"开始检查是否在线，8s内返回结果")
 
-            mqttHelper.publishMessage(mqttHelper.mqttTopicCheckAppAlive, "isAlive?", 2)
+            if (isMqttHelperInitialized())
+                mqttHelper.publishMessage(mqttHelper.mqttTopicCheckAppAlive, "isAlive?", 2)
             // 设置 8 秒倒计时
             onlineCheckTimeoutHandler = Handler(Looper.getMainLooper())
             onlineCheckTimeoutRunnable = Runnable {
@@ -205,7 +211,8 @@ class MainActivity : AppCompatActivity() {
             // 更新UI
             mqttViewModel.setState(UiState.Daring,"正在打卡，20s内返回结果")
 
-            mqttHelper.publishMessage(mqttHelper.mqttTopicDark,"dark", 2)//保证送达
+            if (isMqttHelperInitialized())
+                mqttHelper.publishMessage(mqttHelper.mqttTopicDark,"dark", 2)//保证送达
             // 设置 20 秒倒计时
             darkCheckTimeoutHandler = Handler(Looper.getMainLooper())
             darkCheckTimeoutRunnable = Runnable {
@@ -295,8 +302,8 @@ class MainActivity : AppCompatActivity() {
 
             UiState.Connected -> {
                 setButtonState(
-                    scanEnabled = true,
-                    scanColor = lightBlue,
+                    scanEnabled = false,
+                    scanColor = Color.GRAY,
                     scanText = "重新扫码",
                     connectEnabled = true,
                     connectColor = lightGreen,
@@ -312,11 +319,11 @@ class MainActivity : AppCompatActivity() {
 
             UiState.Checking -> {
                 setButtonState(
-                    scanEnabled = true,
-                    scanColor = lightBlue,
+                    scanEnabled = false,
+                    scanColor = Color.GRAY,
                     scanText = "重新扫码",
-                    connectEnabled = true,
-                    connectColor = lightGreen,
+                    connectEnabled = false,
+                    connectColor = Color.GRAY,
                     connectText = "断开连接",
                     checkOnlineEnabled = false,
                     checkOnlineColor = Color.GRAY,
@@ -330,11 +337,11 @@ class MainActivity : AppCompatActivity() {
 
             UiState.Daring -> {
                 setButtonState(
-                    scanEnabled = true,
-                    scanColor = lightBlue,
+                    scanEnabled = false,
+                    scanColor = Color.GRAY,
                     scanText = "重新扫码",
-                    connectEnabled = true,
-                    connectColor = lightGreen,
+                    connectEnabled = false,
+                    connectColor = Color.GRAY,
                     connectText = "断开连接",
                     checkOnlineEnabled = false,
                     checkOnlineColor = Color.GRAY,
@@ -388,10 +395,6 @@ class MainActivity : AppCompatActivity() {
             tvDarkResult.text = it
         }
 
-    }
-
-    override fun onDestroy() {
-        super.onDestroy()
     }
 
     override fun onResume() {
