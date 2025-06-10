@@ -209,11 +209,11 @@ class MainActivity : AppCompatActivity() {
                 return@setOnClickListener  // 中断后续操作
             }
             // 更新UI
-            mqttViewModel.setState(UiState.Daring,"正在打卡，20s内返回结果")
+            mqttViewModel.setState(UiState.Daring,"正在打卡，60s内返回结果")
 
             if (isMqttHelperInitialized())
                 mqttHelper.publishMessage(mqttHelper.mqttTopicDark,"dark", 2)//保证送达
-            // 设置 20 秒倒计时
+            // 设置 60 秒倒计时
             darkCheckTimeoutHandler = Handler(Looper.getMainLooper())
             darkCheckTimeoutRunnable = Runnable {
                 tvDarkResult.text = "打卡失败或网络缓慢，请稍后重试"
@@ -223,7 +223,7 @@ class MainActivity : AppCompatActivity() {
                     mqttViewModel.setState(UiState.Connected,"打卡失败或网络缓慢")
                 }
             }
-            darkCheckTimeoutHandler?.postDelayed(darkCheckTimeoutRunnable!!, 20000)
+            darkCheckTimeoutHandler?.postDelayed(darkCheckTimeoutRunnable!!, 60000)
         }
     }
 
