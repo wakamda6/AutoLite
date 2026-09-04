@@ -64,7 +64,19 @@
                     android:layout_height="60dp"
                     android:layout_weight="1"
                     android:layout_marginStart="8dp"
+                    android:layout_marginEnd="8dp"
                     android:text="连接"
+                    android:textSize="14sp"
+                    android:backgroundTint="#808080"
+                    android:textColor="#000000" />
+
+                <Button
+                    android:id="@+id/btn_settings"
+                    android:layout_width="0dp"
+                    android:layout_height="60dp"
+                    android:layout_weight="1"
+                    android:layout_marginStart="8dp"
+                    android:text="设置"
                     android:textSize="14sp"
                     android:backgroundTint="#808080"
                     android:textColor="#000000" />

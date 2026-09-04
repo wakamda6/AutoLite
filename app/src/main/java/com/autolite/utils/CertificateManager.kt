@@ -2,6 +2,7 @@ package com.autolite.utils
 
 import android.content.Context
 import android.util.Log
+import com.autolite.BaseApplication
 import com.autolite.model.InitViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -36,11 +37,21 @@ data class CertCheckResult(
 object CertificateManager  {
     private const val kTag = "CertificateManager"
 
-    //证书验证的主函数：
+    //证书验证的主函数：根据 TLS 模式走不同流程
     suspend fun getAndCheckCA(context: Context, ID: String, retryIfRevoked: Boolean = true): CertCheckResult {
+        return if (TlsConfig.mode == TlsConfig.MODE_MUTUAL) {
+            checkMutualCA(context, ID, retryIfRevoked)
+        } else {
+            checkNoCert()
+        }
+    }
+
+    // 双向 TLS：下载客户端证书 + CA，校验吊销，构建双向 SSL
+    private suspend fun checkMutualCA(context: Context, ID: String, retryIfRevoked: Boolean): CertCheckResult {
         val clientEnPath = File(context.filesDir, "$ID.en")
         val caEnPath = File(context.filesDir, "ca.en")
-        val baseUrl = "https://***REMOVED***/certs/${ID}/en_${ID}"
+        val currentDomain = BaseApplication.instance.domainAddress
+        val baseUrl = "https://${currentDomain}/certs/${ID}/en_${ID}"
         val clientEnUrl = "$baseUrl/${ID}.en"
         val caEnUrl = "$baseUrl/ca.en"
 
@@ -72,7 +83,7 @@ object CertificateManager  {
             // 自动重试一次
             return if (retryIfRevoked) {
                 LogUtils.log(Log.DEBUG, kTag, "检测到吊销，尝试重新获取证书")
-                getAndCheckCA(context, ID, retryIfRevoked = false)
+                checkMutualCA(context, ID, retryIfRevoked = false)
             } else {
                 CertCheckResult(CertCheckResult.Status.CAisRevoked, "证书已被吊销")
             }
@@ -85,12 +96,19 @@ object CertificateManager  {
         }
 
         // 初始化 SSL
-        if(!MqttConfigHolder.initSslContextIfNeeded(p12Bytes, ID.toCharArray(), caBytes)){
+        if(!MqttConfigHolder.initMutualSslContext(p12Bytes, ID.toCharArray(), caBytes)){
             deleteCertFiles(clientEnPath, caEnPath)
             return CertCheckResult(CertCheckResult.Status.SSLError, "SSL 初始化失败")
         }
 
         return CertCheckResult(CertCheckResult.Status.CASuccess, checkCertResult.message)
+    }
+
+    // 无加密 / 单向 TLS：无需下载证书，清空自定义 SSL 上下文
+    private fun checkNoCert(): CertCheckResult {
+        MqttConfigHolder.reset()
+        val desc = if (TlsConfig.mode == TlsConfig.MODE_ONE_WAY) "单向TLS（系统信任）" else "无加密"
+        return CertCheckResult(CertCheckResult.Status.CASuccess, desc)
     }
 
     //删除ca文件
@@ -167,7 +185,7 @@ object CertificateManager  {
             val clientCert = keyStore.getCertificate(alias) as X509Certificate
 
             val crl = withContext(Dispatchers.IO) {
-                val url = URL("https://***REMOVED***/crl/crl.pem")
+                val url = URL("https://${BaseApplication.instance.domainAddress}/crl/crl.pem")
                 val inputStream = url.openStream()
                 CertificateFactory.getInstance("X.509").generateCRL(inputStream) as X509CRL
             }

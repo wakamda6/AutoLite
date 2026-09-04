@@ -39,23 +39,23 @@ class InitViewModel(application: Application) : AndroidViewModel(application) {
                         }
                         CertCheckResult.Status.CAGetFailed -> {
                             SharedMqttState.hasCertCheckFailedOnce = true
-                            _initState.postValue(InitState.Failed("证书获取失败\n请联系开发者 ID:$ID"))
+                            _initState.postValue(InitState.Failed("证书获取失败\n请查看服务器CA配置 ID:$ID"))
                         }
                         CertCheckResult.Status.CADecodeFailed -> {
                             SharedMqttState.hasCertCheckFailedOnce = true
-                            _initState.postValue(InitState.Failed("证书解密失败\n请联系开发者 ID:$ID"))
+                            _initState.postValue(InitState.Failed("证书解密失败\n请查看服务器CA配置 ID:$ID"))
                         }
                         CertCheckResult.Status.CAisRevoked -> {
                             SharedMqttState.hasCertCheckFailedOnce = true
-                            _initState.postValue(InitState.Failed("证书已过期\n请联系开发者 ID:$ID"))
+                            _initState.postValue(InitState.Failed("证书已过期\n请查看服务器CA配置 ID:$ID"))
                         }
                         CertCheckResult.Status.CheckCertRevokedError -> {
                             SharedMqttState.hasCertCheckFailedOnce = true
-                            _initState.postValue(InitState.Failed("证书验证错误\n请联系开发者 ID:$ID"))
+                            _initState.postValue(InitState.Failed("证书验证错误\n请查看服务器CA配置 ID:$ID"))
                         }
                         CertCheckResult.Status.SSLError -> {
                             SharedMqttState.hasCertCheckFailedOnce = true
-                            _initState.postValue(InitState.Failed("SSL 初始化失败\n请联系开发者 ID:$ID"))
+                            _initState.postValue(InitState.Failed("SSL 初始化失败\n请查看服务器CA配置 ID:$ID"))
                         }
                     }
                 }

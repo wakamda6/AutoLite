@@ -5,6 +5,13 @@ plugins {
     id 'org.jetbrains.kotlin.android'
 }
 
+// 从本地 keystore.properties 读取签名信息（该文件 gitignored，不提交密钥）
+def keystoreProperties = new Properties()
+def keystorePropertiesFile = rootProject.file('keystore.properties')
+if (keystorePropertiesFile.exists()) {
+    keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
+}
+
 android {
     namespace 'com.autolite'
     compileSdk 33
@@ -15,18 +22,20 @@ android {
         applicationId "com.autolite"
         minSdk 24
         targetSdk 33
-        versionCode 210
-        versionName "2.1.0"
+        versionCode 300
+        versionName "3.0.0"
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
 
     signingConfigs {
         release {
-            storeFile file(project.hasProperty('KEYSTORE_FILE') ? project.KEYSTORE_FILE : "")
-            storePassword project.hasProperty('KEYSTORE_PASSWORD') ? project.KEYSTORE_PASSWORD : ""
-            keyAlias project.hasProperty('KEY_ALIAS') ? project.KEY_ALIAS : ""
-            keyPassword project.hasProperty('KEY_PASSWORD') ? project.KEY_PASSWORD : ""
+            if (keystorePropertiesFile.exists()) {
+                storeFile file(keystoreProperties['KEYSTORE_FILE'])
+                storePassword keystoreProperties['KEYSTORE_PASSWORD']
+                keyAlias keystoreProperties['KEY_ALIAS']
+                keyPassword keystoreProperties['KEY_PASSWORD']
+            }
         }
     }
 

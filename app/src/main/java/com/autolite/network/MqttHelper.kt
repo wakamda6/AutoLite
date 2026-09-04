@@ -2,11 +2,14 @@ package com.autolite.network
 
 import android.content.Context
 import android.util.Log
+import com.autolite.BaseApplication
 import com.autolite.model.MqttViewModel
 import com.autolite.model.UiState
 import com.autolite.utils.LogUtils
+import com.autolite.utils.MqttAuthConfig
 import com.autolite.utils.MqttConfigHolder
 import com.autolite.utils.NetworkUtils
+import com.autolite.utils.TlsConfig
 import org.eclipse.paho.client.mqttv3.MqttException
 import info.mqtt.android.service.Ack
 import org.eclipse.paho.client.mqttv3.*
@@ -25,10 +28,7 @@ class MqttHelper(
 
     //mqtt变量
     private var mqttClient: MqttAndroidClient? = null
-    private var mqttServerUrl = "ssl://***REMOVED***:8883"
     private var mqttClientId = liteID
-    private var user = liteID
-    private var pwd = liteID
     var mqttTopicCheckAppAlive = "/topic/$darkID/checkAppAlive"
     private var mqttTopicCheckAppAliveResult = "/topic/$darkID/checkAppAliveResult"
     var mqttTopicDark = "/topic/$darkID/dark"
@@ -99,7 +99,8 @@ class MqttHelper(
     }
 
     private fun initMqttClient() {
-        mqttClient = MqttAndroidClient(context.applicationContext, mqttServerUrl, mqttClientId, Ack.AUTO_ACK)
+        val url = "${TlsConfig.scheme}://${BaseApplication.instance.domainAddress}:${TlsConfig.mqttPort}"
+        mqttClient = MqttAndroidClient(context.applicationContext, url, mqttClientId, Ack.AUTO_ACK)
         mqttClient?.setCallback(mqttCallback)
     }
 
@@ -109,8 +110,8 @@ class MqttHelper(
             isCleanSession = false
             connectionTimeout = 20
             keepAliveInterval = 60
-            userName = user
-            password = pwd.toCharArray()
+            userName = MqttAuthConfig.username.ifBlank { mqttClientId }
+            password = MqttAuthConfig.password.ifBlank { mqttClientId }.toCharArray()
             isAutomaticReconnect = true
 
             MqttConfigHolder.mqttSslContext?.let {

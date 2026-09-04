@@ -3,6 +3,7 @@ package com.autolite
 import android.annotation.SuppressLint
 import android.app.Activity
 import android.app.Application
+import android.content.Context
 import android.os.Bundle
 import android.provider.Settings
 import android.util.Log
@@ -12,7 +13,20 @@ class BaseApplication : Application() {
     companion object {
         lateinit var instance: BaseApplication
         lateinit var liteID: String
+        const val PREF_NAME = "app_prefs"
+        const val KEY_DOMAIN = "DOMAIN_ADDRESS"
     }
+
+    // 动态获取或设置服务器地址（域名或 IP）
+    var domainAddress: String
+        get() {
+            val sp = getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
+            return sp.getString(KEY_DOMAIN, "") ?: ""
+        }
+        set(value) {
+            val sp = getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
+            sp.edit().putString(KEY_DOMAIN, value.trim()).apply()
+        }
 
     private var activityCount = 0
 

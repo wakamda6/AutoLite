@@ -14,13 +14,20 @@ object MqttConfigHolder {
     var mqttSslContext: SSLContext? = null
         private set
 
-    fun initSslContextIfNeeded(p12Bytes: ByteArray, p12Password: CharArray, caBytes: ByteArray): Boolean {
+    // 清空缓存的 SSLContext，切换 TLS 模式后必须调用
+    fun reset() {
+        mqttSslContext = null
+        lastSslHash = null
+    }
+
+    // 双向 TLS：携带客户端证书 + 信任 CA
+    fun initMutualSslContext(p12Bytes: ByteArray, p12Password: CharArray, caBytes: ByteArray): Boolean {
         val newHash = (p12Bytes.contentHashCode().toString() + caBytes.contentHashCode().toString())
 
         if (newHash == lastSslHash && mqttSslContext != null) {
             LogUtils.log(Log.DEBUG, kTag, "证书哈希值相同，SSLContext 无需重新初始化")
             return true
-        }else {
+        } else {
             LogUtils.log(Log.DEBUG, kTag, "证书发生变化，SSLContext 重新初始化")
         }
 
@@ -43,7 +50,7 @@ object MqttConfigHolder {
                 init(caKeyStore)
             }
 
-            mqttSslContext = SSLContext.getInstance("TLSv1.2").apply {
+            mqttSslContext = SSLContext.getInstance("TLS").apply {
                 init(keyManagerFactory.keyManagers, trustManagerFactory.trustManagers, null)
             }
             lastSslHash = newHash

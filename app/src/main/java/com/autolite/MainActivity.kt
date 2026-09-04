@@ -6,8 +6,10 @@ import android.graphics.Color
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.text.InputType
 import android.util.Log
 import android.widget.Button
+import android.widget.EditText
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.viewModels
@@ -20,6 +22,8 @@ import com.autolite.model.MqttViewModel
 import com.autolite.model.UiState
 import com.autolite.network.MqttHelper
 import com.autolite.utils.LogUtils
+import com.autolite.utils.MqttAuthConfig
+import com.autolite.utils.TlsConfig
 import com.journeyapps.barcodescanner.ScanContract
 import com.journeyapps.barcodescanner.ScanOptions
 import org.eclipse.paho.client.mqttv3.*
@@ -44,6 +48,7 @@ class MainActivity : AppCompatActivity() {
     //UI组件
     private lateinit var btnScan: Button
     private lateinit var btnConnect: Button
+    private lateinit var btnSettings: Button
     private lateinit var tvTimeout: TextView
     private lateinit var tvLiteId: TextView
     private lateinit var tvDarkId: TextView
@@ -69,6 +74,7 @@ class MainActivity : AppCompatActivity() {
         // 绑定视图
         btnScan = findViewById(R.id.btn_scan)
         btnConnect = findViewById(R.id.btn_connect)
+        btnSettings = findViewById(R.id.btn_settings)
         tvTimeout = findViewById(R.id.tv_timeout)
         tvLiteId= findViewById(R.id.tv_liteId)
         tvDarkId= findViewById(R.id.tv_darkId)
@@ -143,6 +149,11 @@ class MainActivity : AppCompatActivity() {
                 setBarcodeImageEnabled(true)
             }
             barcodeLauncher.launch(options)
+        }
+
+        // 设置按钮
+        btnSettings.setOnClickListener {
+            showSettingsDialog()
         }
 
         // 设置连接按钮
@@ -401,5 +412,109 @@ class MainActivity : AppCompatActivity() {
         super.onResume()
         //证书检查
         certViewModel.initCertificateCheck(liteID)
+    }
+
+    // 设置弹窗
+    private fun showSettingsDialog() {
+        val items = arrayOf("服务器地址", "连接方式", "MQTT账号")
+        android.app.AlertDialog.Builder(this)
+            .setTitle("设置")
+            .setItems(items) { _, which ->
+                when (which) {
+                    0 -> showDomainInputDialog()
+                    1 -> showModeDialog()
+                    2 -> showMqttAccountDialog()
+                }
+            }
+            .setNegativeButton("取消", null)
+            .show()
+    }
+
+    // 服务器地址
+    private fun showDomainInputDialog() {
+        val input = EditText(this).apply {
+            setText(BaseApplication.instance.domainAddress)
+            hint = "请输入服务器地址（域名或IP）"
+            maxLines = 1
+            inputType = InputType.TYPE_CLASS_TEXT
+        }
+        val dialog = android.app.AlertDialog.Builder(this)
+            .setTitle("服务器地址")
+            .setView(input)
+            .setPositiveButton("确定", null)
+            .setNegativeButton("取消", null)
+            .create()
+        dialog.show()
+        dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+            val address = input.text.toString().trim()
+            if (address.isEmpty()) {
+                input.error = "地址不能为空！"
+            } else {
+                BaseApplication.instance.domainAddress = address
+                // 根据地址类型设置默认连接方式：IP→无加密，域名→单向
+                TlsConfig.mode = if (TlsConfig.isIpAddress(address)) TlsConfig.MODE_NONE else TlsConfig.MODE_ONE_WAY
+                dialog.dismiss()
+                Toast.makeText(this, "已保存，请重新连接", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    // 连接方式
+    private fun showModeDialog() {
+        val values = arrayOf(TlsConfig.MODE_NONE, TlsConfig.MODE_ONE_WAY, TlsConfig.MODE_MUTUAL)
+        val labels = arrayOf("无加密", "单向TLS", "双向TLS")
+        val current = values.indexOf(TlsConfig.mode).coerceAtLeast(0)
+        android.app.AlertDialog.Builder(this)
+            .setTitle("连接方式")
+            .setMessage("无加密：只需服务器+broker，明文（不安全）\n单向TLS：另需域名+公网证书（较安全）\n双向TLS：另需域名+自建CA+客户端证书（最安全）")
+            .setSingleChoiceItems(labels, current) { dialog, which ->
+                val newMode = values[which]
+                if (newMode != TlsConfig.mode) {
+                    // 切到单向/双向前，服务器地址必须是域名
+                    if (newMode != TlsConfig.MODE_NONE && TlsConfig.isIpAddress(BaseApplication.instance.domainAddress)) {
+                        Toast.makeText(this, "当前是IP地址，切换到单向/双向需要域名", Toast.LENGTH_LONG).show()
+                    } else {
+                        TlsConfig.switchTo(newMode)
+                    }
+                }
+                dialog.dismiss()
+                Toast.makeText(this, "已保存，请重新连接", Toast.LENGTH_SHORT).show()
+            }
+            .setNegativeButton("取消", null)
+            .show()
+    }
+
+    // MQTT账号
+    private fun showMqttAccountDialog() {
+        val container = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.VERTICAL
+            setPadding(40, 20, 40, 20)
+        }
+        val userEdit = EditText(this).apply {
+            hint = "MQTT用户名（留空=设备ID）"
+            maxLines = 1
+            setText(MqttAuthConfig.username)
+        }
+        val pwdEdit = EditText(this).apply {
+            hint = "MQTT密码（留空=设备ID）"
+            maxLines = 1
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+            setText(MqttAuthConfig.password)
+        }
+        container.addView(userEdit)
+        container.addView(pwdEdit)
+        val dialog = android.app.AlertDialog.Builder(this)
+            .setTitle("MQTT账号")
+            .setView(container)
+            .setPositiveButton("确定", null)
+            .setNegativeButton("取消", null)
+            .create()
+        dialog.show()
+        dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+            MqttAuthConfig.username = userEdit.text.toString().trim()
+            MqttAuthConfig.password = pwdEdit.text.toString().trim()
+            dialog.dismiss()
+            Toast.makeText(this, "已保存，请重新连接", Toast.LENGTH_SHORT).show()
+        }
     }
 }
