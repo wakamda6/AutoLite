@@ -272,8 +272,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     //各个状态时UI组件显示
-    private val lightGreen = Color.parseColor("#90EE90")  // 浅绿色
-    private val lightBlue = Color.parseColor("#ADD8E6")  //浅蓝色
+    private val lightBlue = Color.parseColor("#ADD8E6")  //浅蓝色（可点击）
     private fun updateUiForState(state: UiState) {
         when (state) {
             //未扫码
@@ -317,7 +316,7 @@ class MainActivity : AppCompatActivity() {
                     scanColor = Color.GRAY,
                     scanText = "重新扫码",
                     connectEnabled = true,
-                    connectColor = lightGreen,
+                    connectColor = lightBlue,
                     connectText = "断开连接",
                     checkOnlineEnabled = true,
                     checkOnlineColor = lightBlue,
@@ -463,24 +462,34 @@ class MainActivity : AppCompatActivity() {
     private fun showModeDialog() {
         val values = arrayOf(TlsConfig.MODE_NONE, TlsConfig.MODE_ONE_WAY, TlsConfig.MODE_MUTUAL)
         val labels = arrayOf("无加密", "单向TLS", "双向TLS")
-        val current = values.indexOf(TlsConfig.mode).coerceAtLeast(0)
         android.app.AlertDialog.Builder(this)
-            .setTitle("连接方式")
-            .setMessage("无加密：只需服务器+broker，明文（不安全）\n单向TLS：另需域名+公网证书（较安全）\n双向TLS：另需域名+自建CA+客户端证书（最安全）")
-            .setSingleChoiceItems(labels, current) { dialog, which ->
+            .setTitle("选择连接方式（当前：${TlsConfig.modeName()}）")
+            .setItems(labels) { _, which ->
                 val newMode = values[which]
                 if (newMode != TlsConfig.mode) {
                     // 切到单向/双向前，服务器地址必须是域名
                     if (newMode != TlsConfig.MODE_NONE && TlsConfig.isIpAddress(BaseApplication.instance.domainAddress)) {
-                        Toast.makeText(this, "当前是IP地址，切换到单向/双向需要域名", Toast.LENGTH_LONG).show()
+                        showDomainRequiredForTlsDialog()
                     } else {
                         TlsConfig.switchTo(newMode)
+                        Toast.makeText(this, "已切换，请重新连接", Toast.LENGTH_SHORT).show()
                     }
                 }
-                dialog.dismiss()
-                Toast.makeText(this, "已保存，请重新连接", Toast.LENGTH_SHORT).show()
             }
             .setNegativeButton("取消", null)
+            .show()
+    }
+
+    // 切换到单向/双向 TLS 需要域名，当前是 IP 时提示先改域名
+    private fun showDomainRequiredForTlsDialog() {
+        android.app.AlertDialog.Builder(this)
+            .setTitle("需要域名")
+            .setMessage("当前服务器地址是 IP，切换到单向/双向 TLS 需要域名。\n请先将服务器地址修改为域名。")
+            .setCancelable(false)
+            .setNegativeButton("取消", null)
+            .setPositiveButton("修改服务器地址") { _, _ ->
+                showDomainInputDialog()
+            }
             .show()
     }
 
